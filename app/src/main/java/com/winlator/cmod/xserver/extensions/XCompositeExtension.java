@@ -170,6 +170,7 @@ public class XCompositeExtension implements Extension, XResourceManager.OnResour
     }
 
     private void setRedirectState(Window window, boolean redirected) {
+        window.setCompositeRedirected(redirected);
         window.getContent().setOffscreen(redirected);
         xServer.getXServerView().nativeSetCompositeRedirected(window.id, redirected);
     }
