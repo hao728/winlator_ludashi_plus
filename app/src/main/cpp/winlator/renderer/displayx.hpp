@@ -190,7 +190,7 @@ class DisplayX {
         void mapWindow(Window *window);
         void unmapWindow(Window *window);
         void changeGeometry(Window *window, bool resized);
-        void changeZOrder(Window *window, Window *sibling, int stackMode);
+        void changeZOrder(Window *window);
         void reparentWindow(Window *window, Window *parent);
         void updateCursor(Cursor *cursor);
         void showCursor();
