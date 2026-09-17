@@ -230,7 +230,6 @@ Java_com_winlator_cmod_widget_XServerView_nativeCreateWindow(JNIEnv *env, jobjec
     window->control = nullptr;
     window->currentDirectContent = nullptr;
     window->enabled = true;
-    window->compositeOverridden = false;
     
     jobject attributes = env->GetObjectField(windowObj, cache.windowAttributes);
     window->attributes = env->NewGlobalRef(attributes);
@@ -397,8 +396,6 @@ Java_com_winlator_cmod_widget_XServerView_nativeChangeWindowZOrder(JNIEnv *env, 
     
     windowManager.changeZOrder(stackMode, window, sibling);
     
-    if (window->compositeOverridden) window->compositeOverridden = false;
-    
     if (!xserver.isDisplayX()) {
         renderer.queueEvent([]{ renderer.updateScene(); });
         renderer.requestRenderer();
@@ -415,7 +412,6 @@ Java_com_winlator_cmod_widget_XServerView_nativeUpdateWindowGeometry(JNIEnv *env
     
     window->width = width;
     window->height = height;
-    if (window->compositeOverridden) window->compositeOverridden = false;
     window->x = x;
     window->y = y;
     
@@ -469,7 +465,6 @@ Java_com_winlator_cmod_widget_XServerView_nativeReparentWindow(JNIEnv *env, jobj
     
     window->x = x;
     window->y = y;
-    if (window->compositeOverridden) window->compositeOverridden = false;
     
     windowManager.reparentWindow(window, parent);
     
@@ -662,10 +657,11 @@ Java_com_winlator_cmod_widget_XServerView_nativeCompositeRedirect(JNIEnv *env, j
     if (!srcWindow) return;
     
     auto dstWindow = windowManager.getWindow(dstDrawableId);
-    if (!dstWindow || dstWindow->compositeOverridden) return;
+    if (!dstWindow) return;
     
     if (!srcWindow->isAncestorOf(dstWindow)) {
         bool positionChanged = false;
+        bool zOrderChanged = false;
         
         auto sibling = srcWindow->getWindowSibling(dstWindow);
         if (!sibling) return;
@@ -678,19 +674,19 @@ Java_com_winlator_cmod_widget_XServerView_nativeCompositeRedirect(JNIEnv *env, j
             sibling->y = posY;
             positionChanged = true;
         }
-       
-        windowManager.changeZOrder(1, sibling, dstWindow);
+        
+        if (sibling->z_order <= dstWindow->z_order) {
+            windowManager.changeZOrder(1, sibling, dstWindow);
+            zOrderChanged = true;
+        }    
         
         if (xserver.isDisplayX()) {
             if (positionChanged) displayX.queueEvent([sibling] { displayX.changeGeometry(sibling, false); });
-            displayX.queueEvent([sibling] { displayX.changeZOrder(sibling); });
+            if (zOrderChanged) displayX.queueEvent([sibling] { displayX.changeZOrder(sibling); });
         }     
         else {
             if (positionChanged) renderer.queueEvent([sibling]{ renderer.updateWindowPosition(sibling); });
-            renderer.queueEvent([sibling]{ renderer.updateScene(); });
-            renderer.requestRenderer();
+            if (zOrderChanged) renderer.queueEvent([sibling]{ renderer.updateScene(); });
         }
     }
-    
-    dstWindow->compositeOverridden = true;
 }

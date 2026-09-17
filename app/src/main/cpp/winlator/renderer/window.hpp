@@ -19,7 +19,6 @@ struct Window {
     bool mapped;
     bool inputOutput;
     bool compositeRedirected;
-    bool compositeOverridden;
     bool hasContent;
     std::unique_ptr<struct Drawable> drawable;
     Window *parent;
@@ -61,7 +60,7 @@ struct Window {
         auto window = this;
         
         while (window != nullptr) {
-            if (window->parent == w)
+            if (window == w)
                 return true;
             
             window = window->parent;    
