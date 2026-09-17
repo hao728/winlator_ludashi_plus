@@ -47,7 +47,6 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
     private final Object lock = new Object();
     private final ExecutorService eventExecutor = Executors.newSingleThreadExecutor();
     private final Set<Integer> compositeRedirectedWindows = ConcurrentHashMap.newKeySet();
-    private final Set<Integer> compositeOverriddenWindows = ConcurrentHashMap.newKeySet();
 
     private boolean fullscreen = false;
     private float magnifierZoom = 1.0f;
@@ -285,7 +284,6 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
             initExecutor = null;
         }
         compositeRedirectedWindows.clear();
-        compositeOverriddenWindows.clear();
         synchronized (lock) {
             if (nativeHandle != 0) {
                 nativeDestroy(nativeHandle);
@@ -399,7 +397,6 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
     public void onDestroyWindow(Window window) {
         final long id = window.id;
         compositeRedirectedWindows.remove(window.id);
-        compositeOverriddenWindows.remove(window.id);
         queueEvent(() -> {
             synchronized (lock) {
                 if (nativeHandle != 0) nativeDestroyWindow(nativeHandle, id);
@@ -430,7 +427,6 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
 
     @Override
     public void onReparentWindow(Window window, Window newParent, short x, short y) {
-        compositeOverriddenWindows.remove(window.id);
         final long id = window.id;
         final long newParentId = newParent != null ? newParent.id : 0;
         final long contentId = did(window.getContent());
@@ -447,7 +443,6 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
 
     @Override
     public void onChangeWindowZOrder(Window.StackMode stackMode, Window window, Window sibling) {
-        compositeOverriddenWindows.remove(window.id);
         Window parent = window.getParent();
         if (parent == null) return;
         List<Window> children = parent.getChildren();
@@ -463,7 +458,6 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
 
     @Override
     public void onUpdateWindowGeometry(Window window, boolean resized) {
-        compositeOverriddenWindows.remove(window.id);
         final long id = window.id;
         final long contentId = did(window.getContent());
         final int x = window.getX(), y = window.getY(), w = window.getWidth(), h = window.getHeight();
@@ -537,7 +531,7 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
     private static boolean hasAncestor(Window window, Window ancestor) {
         Window current = window;
         while (current != null) {
-            if (current.getParent() == ancestor) return true;
+            if (current == ancestor) return true;
             current = current.getParent();
         }
         return false;
@@ -558,7 +552,7 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
         if (srcWindow == null) return;
 
         Window dstWindow = xServer.windowManager.getWindow(dstDrawableId);
-        if (dstWindow == null || compositeOverriddenWindows.contains(dstWindow.id)) return;
+        if (dstWindow == null) return;
 
         if (!hasAncestor(srcWindow, dstWindow)) {
             Window sibling = getWindowSibling(srcWindow, dstWindow);
@@ -576,11 +570,18 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
 
             Window parent = sibling.getParent();
             if (parent == null || parent != dstWindow.getParent()) return;
-            parent.moveChildAbove(sibling, dstWindow);
-            onChangeWindowZOrder(Window.StackMode.ABOVE, sibling, dstWindow);
+
+            List<Window> children = parent.getChildren();
+            int siblingIndex = children.indexOf(sibling);
+            int dstIndex = children.indexOf(dstWindow);
+            if (siblingIndex < 0 || dstIndex < 0) return;
+
+            if (siblingIndex <= dstIndex) {
+                parent.moveChildAbove(sibling, dstWindow);
+                onChangeWindowZOrder(Window.StackMode.ABOVE, sibling, dstWindow);
+            }
         }
 
-        compositeOverriddenWindows.add(dstWindow.id);
     }
 
     @Override
