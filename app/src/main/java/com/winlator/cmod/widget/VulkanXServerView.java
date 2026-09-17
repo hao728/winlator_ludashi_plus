@@ -31,6 +31,8 @@ import com.winlator.cmod.xserver.XServer;
 
 import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -44,6 +46,8 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
     private long nativeHandle = 0;
     private final Object lock = new Object();
     private final ExecutorService eventExecutor = Executors.newSingleThreadExecutor();
+    private final Set<Integer> compositeRedirectedWindows = ConcurrentHashMap.newKeySet();
+    private final Set<Integer> compositeOverriddenWindows = ConcurrentHashMap.newKeySet();
 
     private boolean fullscreen = false;
     private float magnifierZoom = 1.0f;
@@ -280,6 +284,8 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
             catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
             initExecutor = null;
         }
+        compositeRedirectedWindows.clear();
+        compositeOverriddenWindows.clear();
         synchronized (lock) {
             if (nativeHandle != 0) {
                 nativeDestroy(nativeHandle);
@@ -392,6 +398,8 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
     @Override
     public void onDestroyWindow(Window window) {
         final long id = window.id;
+        compositeRedirectedWindows.remove(window.id);
+        compositeOverriddenWindows.remove(window.id);
         queueEvent(() -> {
             synchronized (lock) {
                 if (nativeHandle != 0) nativeDestroyWindow(nativeHandle, id);
@@ -421,18 +429,25 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
     }
 
     @Override
-    public void onReparentWindow(Window window, Window newParent) {
+    public void onReparentWindow(Window window, Window newParent, short x, short y) {
+        compositeOverriddenWindows.remove(window.id);
         final long id = window.id;
         final long newParentId = newParent != null ? newParent.id : 0;
+        final long contentId = did(window.getContent());
+        final int width = window.getWidth(), height = window.getHeight();
         queueEvent(() -> {
             synchronized (lock) {
-                if (nativeHandle != 0) nativeReparentWindow(nativeHandle, id, newParentId);
+                if (nativeHandle != 0) {
+                    nativeReparentWindow(nativeHandle, id, newParentId);
+                    nativeUpdateWindowGeometry(nativeHandle, id, contentId, x, y, width, height);
+                }
             }
         });
     }
 
     @Override
     public void onChangeWindowZOrder(Window.StackMode stackMode, Window window, Window sibling) {
+        compositeOverriddenWindows.remove(window.id);
         Window parent = window.getParent();
         if (parent == null) return;
         List<Window> children = parent.getChildren();
@@ -448,6 +463,7 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
 
     @Override
     public void onUpdateWindowGeometry(Window window, boolean resized) {
+        compositeOverriddenWindows.remove(window.id);
         final long id = window.id;
         final long contentId = did(window.getContent());
         final int x = window.getX(), y = window.getY(), w = window.getWidth(), h = window.getHeight();
@@ -512,6 +528,62 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
     }
 
     @Override
+    public void nativeSetCompositeRedirected(int windowId, boolean redirected) {
+        if (xServer.windowManager.getWindow(windowId) == null) return;
+        if (redirected) compositeRedirectedWindows.add(windowId);
+        else compositeRedirectedWindows.remove(windowId);
+    }
+
+    private static boolean hasAncestor(Window window, Window ancestor) {
+        Window current = window;
+        while (current != null) {
+            if (current.getParent() == ancestor) return true;
+            current = current.getParent();
+        }
+        return false;
+    }
+
+    private static Window getWindowSibling(Window window, Window other) {
+        Window current = window;
+        while (current != null) {
+            if (current.getParent() == other.getParent()) return current;
+            current = current.getParent();
+        }
+        return null;
+    }
+
+    @Override
+    public void nativeCompositeRedirect(int srcDrawableId, int dstDrawableId, short dstX, short dstY) {
+        Window srcWindow = xServer.windowManager.getWindow(srcDrawableId);
+        if (srcWindow == null) return;
+
+        Window dstWindow = xServer.windowManager.getWindow(dstDrawableId);
+        if (dstWindow == null || compositeOverriddenWindows.contains(dstWindow.id)) return;
+
+        if (!hasAncestor(srcWindow, dstWindow)) {
+            Window sibling = getWindowSibling(srcWindow, dstWindow);
+            if (sibling == null) return;
+
+            int posX = dstWindow.getX() + dstX;
+            int posY = dstWindow.getY() + dstY;
+            boolean positionChanged = sibling.getX() != posX || sibling.getY() != posY;
+
+            if (positionChanged) {
+                sibling.setX((short)posX);
+                sibling.setY((short)posY);
+                onUpdateWindowGeometry(sibling, false);
+            }
+
+            Window parent = sibling.getParent();
+            if (parent == null || parent != dstWindow.getParent()) return;
+            parent.moveChildAbove(sibling, dstWindow);
+            onChangeWindowZOrder(Window.StackMode.ABOVE, sibling, dstWindow);
+        }
+
+        compositeOverriddenWindows.add(dstWindow.id);
+    }
+
+    @Override
     public void onUpdateWindowContent(Window window) {
         synchronized (lock) {
             if (nativeHandle == 0) return;
@@ -535,7 +607,7 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
             nativeSetPointerPos(nativeHandle, x, y);
             Window pw = xServer.inputDeviceManager.getPointWindow();
             Cursor cursor = pw != null ? pw.attributes.getCursor() : null;
-            if (cursor != lastCursor) { lastCursor = cursor; sendCursorToNative(cursor); }
+            if (cursor != lastCursor) { lastCursor = cursor; sendCursorToNative(lastCursor); }
             if (screenOffsetYRelativeToCursor || magnifierZoom != 1.0f) updateTransform();
         }
     }
