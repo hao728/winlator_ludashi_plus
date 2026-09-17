@@ -2,7 +2,9 @@ name: Android CI Bionic
 
 on:
   workflow_dispatch:
-
+  push:
+    branches:
+      - 4.1
 permissions:
   contents: write
 
