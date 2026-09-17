@@ -78,6 +78,29 @@ static char *get_library_name(JNIEnv *env, jobject context, const char *driver_n
     return library_name;
 }
 
+static void preload_first_existing(const char **candidates) {
+    for (int i = 0; candidates[i]; i++) {
+        if (dlopen(candidates[i], RTLD_GLOBAL | RTLD_NOW))
+            return;
+    }
+}
+
+static void preload_vendor_icd_deps() {
+    const char *jpeg_candidates[] = {
+        "/system/lib64/libjpeg.so",
+        "/system_ext/lib64/libjpeg.so",
+        "libjpeg.so",
+        NULL,
+    };
+    preload_first_existing(jpeg_candidates);
+
+    const char *crypto_candidates[] = {
+        "libcrypto.so",
+        NULL,
+    };
+    preload_first_existing(crypto_candidates);
+}
+
 static void init_original_vulkan() {
     vulkan_handle = dlopen("/system/lib64/libvulkan.so", RTLD_LOCAL | RTLD_NOW);
 }
@@ -86,6 +109,7 @@ static void init_vulkan(JNIEnv  *env, jobject context, const char *driver_name) 
     char *tmpdir;
     char *library_name;
     char *native_library_dir;
+    preload_vendor_icd_deps();
 
     const char *driver_path = get_driver_path(env, context, driver_name);
 
@@ -291,8 +315,8 @@ Java_com_winlator_cmod_core_GPUInformation_enumerateExtensions(JNIEnv *env, jcla
     if (result != VK_SUCCESS || extensionCount < 1) {
         printf("Failed to query extension count");
         return (*env)->NewObjectArray(env, 0, (*env)->FindClass(env, "java/lang/String"), NULL);
-    }    
-    
+    }
+
     VkExtensionProperties *extensionProperties = malloc(sizeof(VkExtensionProperties) * extensionCount);
     enumerateDeviceExtensionProperties(physicalDevice, NULL, &extensionCount,
                                        extensionProperties);
