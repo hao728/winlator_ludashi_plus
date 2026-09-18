@@ -551,13 +551,17 @@ public class ShortcutsFragment extends Fragment {
         if (!cover.exists() && artworkRequests.add(coverKey)) {
             fetchCoverFromSteamGrid(shortcut, cover, () -> {
                 artworkRequests.remove(coverKey);
-                if (getActivity() != null) getActivity().runOnUiThread(this::publishLibraryItems);
+                if (getActivity() != null) {
+                    getActivity().runOnUiThread(() -> refreshArtworkAndLauncherShortcuts(shortcut));
+                }
             }, () -> {
                 artworkRequests.remove(coverKey);
                 File exeFile = resolveExeFile(shortcut);
                 if (exeFile != null && !autoIcon.exists()) {
                     ExeIconExtractor.extractAsync(exeFile, autoIcon, false, () -> {
-                        if (getActivity() != null) getActivity().runOnUiThread(this::publishLibraryItems);
+                        if (getActivity() != null) {
+                            getActivity().runOnUiThread(() -> refreshArtworkAndLauncherShortcuts(shortcut));
+                        }
                     });
                 }
             });
@@ -569,7 +573,9 @@ public class ShortcutsFragment extends Fragment {
         if (!banner.exists() && artworkRequests.add(bannerKey)) {
             fetchBannerFromSteamGrid(shortcut, banner, () -> {
                 artworkRequests.remove(bannerKey);
-                if (getActivity() != null) getActivity().runOnUiThread(this::publishLibraryItems);
+                if (getActivity() != null) {
+                    getActivity().runOnUiThread(() -> refreshArtworkAndLauncherShortcuts(shortcut));
+                }
             }, () -> artworkRequests.remove(bannerKey));
         }
     }
@@ -792,16 +798,44 @@ public class ShortcutsFragment extends Fragment {
         } catch (IOException ignored) {}
     }
 
-    private Bitmap getLauncherShortcutBitmap(Shortcut shortcut, ShortcutManager shortcutManager) {
-        File iconDir = getImagesDir(false);
-        String baseName = FileUtils.getBasename(shortcut.file.getPath());
-        File userIconFile = new File(iconDir, baseName + ".user.png");
-        File autoIconFile = new File(iconDir, baseName + ".png");
-        File imgFile = userIconFile.isFile() ? userIconFile : autoIconFile;
+    private Bitmap centerCropSquare(Bitmap source) {
+        if (source == null) return null;
+        int size = Math.min(source.getWidth(), source.getHeight());
+        int x = Math.max(0, (source.getWidth() - size) / 2);
+        int y = Math.max(0, (source.getHeight() - size) / 2);
+        if (x == 0 && y == 0 && source.getWidth() == source.getHeight()) return source;
+        return Bitmap.createBitmap(source, x, y, size, size);
+    }
 
-        Bitmap bitmap = imgFile.isFile() ? BitmapFactory.decodeFile(imgFile.getPath()) : shortcut.icon;
+    private Bitmap getLauncherShortcutBitmap(Shortcut shortcut, ShortcutManager shortcutManager) {
+        String baseName = FileUtils.getBasename(shortcut.file.getPath());
+        File userIconFile = new File(getImagesDir(false), baseName + ".user.png");
+        File coverFile = new File(getImagesDir(true), baseName + ".png");
+        File bannerFile = new File(getBannerDir(), baseName + ".png");
+        File autoIconFile = new File(getImagesDir(false), baseName + ".png");
+
+        Bitmap bitmap = null;
+        boolean artwork = false;
+
+        if (userIconFile.isFile()) {
+            bitmap = BitmapFactory.decodeFile(userIconFile.getPath());
+        }
+        if (bitmap == null && coverFile.isFile()) {
+            bitmap = BitmapFactory.decodeFile(coverFile.getPath());
+            artwork = bitmap != null;
+        }
+        if (bitmap == null && bannerFile.isFile()) {
+            bitmap = BitmapFactory.decodeFile(bannerFile.getPath());
+            artwork = bitmap != null;
+        }
+        if (bitmap == null && autoIconFile.isFile()) {
+            bitmap = BitmapFactory.decodeFile(autoIconFile.getPath());
+        }
+        if (bitmap == null) bitmap = shortcut.icon;
         if (bitmap == null) bitmap = BitmapFactory.decodeResource(getResources(), R.drawable.icon_wine);
         if (bitmap == null) return null;
+
+        if (artwork) bitmap = centerCropSquare(bitmap);
 
         int maxWidth = Math.max(1, shortcutManager.getIconMaxWidth());
         int maxHeight = Math.max(1, shortcutManager.getIconMaxHeight());
@@ -811,6 +845,24 @@ public class ShortcutsFragment extends Fragment {
         int width = Math.max(1, Math.round(bitmap.getWidth() * scale));
         int height = Math.max(1, Math.round(bitmap.getHeight() * scale));
         return Bitmap.createScaledBitmap(bitmap, width, height, true);
+    }
+
+    private void refreshArtworkAndLauncherShortcuts(Shortcut shortcut) {
+        publishLibraryItems();
+        syncDynamicAppShortcuts();
+
+        if (shortcut == null || shortcut.container == null) return;
+        String uuid = shortcut.getExtra("uuid");
+        if (uuid.isEmpty()) return;
+
+        ShortcutManager shortcutManager = getSystemService(requireContext(), ShortcutManager.class);
+        if (shortcutManager == null) return;
+
+        Bitmap bitmap = getLauncherShortcutBitmap(shortcut, shortcutManager);
+        if (bitmap == null) return;
+
+        updateShortcutOnScreen(shortcut.name, shortcut.name, shortcut.container.id,
+                shortcut.file.getPath(), Icon.createWithBitmap(bitmap), uuid);
     }
 
     private void syncDynamicAppShortcuts() {
@@ -890,14 +942,9 @@ public class ShortcutsFragment extends Fragment {
     private void addShortcutToScreen(Shortcut shortcut) {
         ShortcutManager shortcutManager = getSystemService(requireContext(), ShortcutManager.class);
         if (shortcutManager != null && shortcutManager.isRequestPinShortcutSupported()) {
-            File iconDir = getImagesDir(false);
-            String baseName = FileUtils.getBasename(shortcut.file.getPath());
-            File userIconFile = new File(iconDir, baseName + ".user.png");
-            File autoIconFile = new File(iconDir, baseName + ".png");
-            File imgFile = userIconFile.isFile() ? userIconFile : autoIconFile;
-            Bitmap bmp = imgFile.isFile() ? BitmapFactory.decodeFile(imgFile.getPath()) : shortcut.icon;
-            if (bmp == null) bmp = BitmapFactory.decodeResource(getResources(), R.drawable.icon_wine);
-            
+            Bitmap bmp = getLauncherShortcutBitmap(shortcut, shortcutManager);
+            if (bmp == null) return;
+
             shortcutManager.requestPinShortcut(buildScreenShortCut(shortcut.name, shortcut.name, shortcut.container.id,
                     shortcut.file.getPath(), Icon.createWithBitmap(bmp), shortcut.getExtra("uuid")), null);
         }
