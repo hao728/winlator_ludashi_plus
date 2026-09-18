@@ -593,6 +593,16 @@ public class ShortcutsFragment extends Fragment {
                 while ((length = is.read(buffer)) > 0) os.write(buffer, 0, length);
             }
 
+            Bitmap selectedIcon = BitmapFactory.decodeFile(destFile.getPath());
+            if (selectedIcon != null) {
+                shortcut.icon = selectedIcon;
+                String uuid = shortcut.getExtra("uuid");
+                if (!uuid.isEmpty()) {
+                    updateShortcutOnScreen(shortcut.name, shortcut.name, shortcut.container.id,
+                            shortcut.file.getPath(), Icon.createWithBitmap(selectedIcon), uuid);
+                }
+            }
+
             Toast.makeText(getContext(), "Icon updated!", Toast.LENGTH_SHORT).show();
             loadShortcutsList();
 
@@ -796,8 +806,11 @@ public class ShortcutsFragment extends Fragment {
         ShortcutManager shortcutManager = getSystemService(requireContext(), ShortcutManager.class);
         if (shortcutManager != null && shortcutManager.isRequestPinShortcutSupported()) {
             File iconDir = getImagesDir(false);
-            File imgFile = new File(iconDir, FileUtils.getBasename(shortcut.file.getPath()) + ".png");
-            Bitmap bmp = imgFile.exists() ? BitmapFactory.decodeFile(imgFile.getPath()) : shortcut.icon;
+            String baseName = FileUtils.getBasename(shortcut.file.getPath());
+            File userIconFile = new File(iconDir, baseName + ".user.png");
+            File autoIconFile = new File(iconDir, baseName + ".png");
+            File imgFile = userIconFile.isFile() ? userIconFile : autoIconFile;
+            Bitmap bmp = imgFile.isFile() ? BitmapFactory.decodeFile(imgFile.getPath()) : shortcut.icon;
             if (bmp == null) bmp = BitmapFactory.decodeResource(getResources(), R.drawable.icon_wine);
             
             shortcutManager.requestPinShortcut(buildScreenShortCut(shortcut.name, shortcut.name, shortcut.container.id,

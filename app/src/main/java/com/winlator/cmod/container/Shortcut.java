@@ -89,9 +89,10 @@ public class Shortcut {
             File externalStorage = Environment.getExternalStorageDirectory();
             File customIconsDir = new File(externalStorage, "Winlator/icons");
             String baseName = FileUtils.getBasename(file.getPath());
-            File customIcon = new File(customIconsDir, baseName + ".png");
+            File userIcon = new File(customIconsDir, baseName + ".user.png");
+            File customIcon = userIcon.isFile() ? userIcon : new File(customIconsDir, baseName + ".png");
 
-            if (customIcon.exists()) {
+            if (customIcon.isFile()) {
                 Bitmap customBitmap = BitmapFactory.decodeFile(customIcon.getAbsolutePath());
                 if (customBitmap != null) {
                     icon = customBitmap;

@@ -143,9 +143,12 @@ public class PreloaderDialog {
         launchStatus.setText(textResId);
 
         releaseArtwork();
+        File userArtwork = getLaunchUserArtworkFile();
+        boolean hasUserArtwork = isUsableImageFile(userArtwork);
         File banner = getLaunchBannerFile();
         boolean hasBanner = isUsableImageFile(banner);
-        File artwork = hasBanner ? banner : getLaunchCoverFile();
+        File artwork = hasUserArtwork ? userArtwork
+                : hasBanner ? banner : getLaunchCoverFile();
         if (isUsableImageFile(artwork)) artworkBitmap = decodeArtwork(artwork);
 
         boolean hasArtwork = artworkBitmap != null;
@@ -159,7 +162,7 @@ public class PreloaderDialog {
         launchScrim.setVisibility(hasArtwork ? View.VISIBLE : View.GONE);
         applyLaunchTextColors(hasArtwork);
 
-        if (!hasBanner && banner != null) {
+        if (!hasUserArtwork && !hasBanner && banner != null) {
             requestTheGamesDbBanner(launchTitleText, banner);
         }
     }
@@ -230,6 +233,13 @@ public class PreloaderDialog {
         if (TextUtils.isEmpty(shortcutPath)) return null;
         String baseName = FileUtils.getBasename(shortcutPath);
         return TextUtils.isEmpty(baseName) ? null : baseName;
+    }
+
+    private File getLaunchUserArtworkFile() {
+        String baseName = resolveLaunchBaseName();
+        if (TextUtils.isEmpty(baseName)) return null;
+        return new File(new File(Environment.getExternalStorageDirectory(), "Winlator/icons"),
+                baseName + ".user.png");
     }
 
     private File getLaunchBannerFile() {

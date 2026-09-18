@@ -398,7 +398,7 @@ internal fun CompactArtworkCard(item: LibraryItem, cb: LibraryCallbacks) {
     ) {
         Box {
             ArtworkCompat(
-                item.bannerPath ?: item.coverPath ?: item.iconPath,
+                userArtworkPath(item) ?: item.bannerPath ?: item.coverPath ?: item.iconPath,
                 item.fallbackIcon,
                 Modifier.fillMaxSize().alpha(.52f)
             )
@@ -415,7 +415,7 @@ internal fun CompactArtworkCard(item: LibraryItem, cb: LibraryCallbacks) {
             )
             Row(Modifier.fillMaxSize().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 ArtworkCompat(
-                    item.coverPath ?: item.bannerPath ?: item.iconPath,
+                    userArtworkPath(item) ?: item.coverPath ?: item.bannerPath ?: item.iconPath,
                     item.fallbackIcon,
                     Modifier.size(68.dp).clip(RoundedCornerShape(11.dp))
                 )
@@ -445,7 +445,7 @@ internal fun CoverArtworkCard(item: LibraryItem, cb: LibraryCallbacks) {
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Box(Modifier.aspectRatio(.72f)) {
-            ArtworkCompat(item.coverPath ?: item.bannerPath ?: item.iconPath, item.fallbackIcon, Modifier.fillMaxSize())
+            ArtworkCompat(userArtworkPath(item) ?: item.coverPath ?: item.bannerPath ?: item.iconPath, item.fallbackIcon, Modifier.fillMaxSize())
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent, Color.Black.copy(.92f)))))
             Column(Modifier.align(Alignment.BottomStart).padding(start = 14.dp, end = 50.dp, bottom = 13.dp)) {
                 Text(item.name, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -465,9 +465,12 @@ private fun RequestArtworkCompat(item: LibraryItem, cb: LibraryCallbacks) {
     }
 }
 
+private fun userArtworkPath(item: LibraryItem): String? =
+    item.iconPath?.takeIf { it.endsWith(".user.png", ignoreCase = true) }
+
 @Composable
 private fun ArtworkCompat(path: String?, fallback: Bitmap?, modifier: Modifier) {
-    val bitmap by produceState<Bitmap?>(fallback, path) {
+    val bitmap by produceState<Bitmap?>(fallback, path, fallback) {
         value = withContext(Dispatchers.IO) {
             path?.takeIf { File(it).isFile }?.let(BitmapFactory::decodeFile) ?: fallback
         }

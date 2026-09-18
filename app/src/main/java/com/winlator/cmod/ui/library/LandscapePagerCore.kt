@@ -110,7 +110,7 @@ internal fun LandscapePagerCore(
     }
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        PagerImage(item.bannerPath ?: item.coverPath, item.fallbackIcon, Modifier.fillMaxSize())
+        PagerImage(userArtworkPath(item) ?: item.bannerPath ?: item.coverPath, item.fallbackIcon, Modifier.fillMaxSize())
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color.Black.copy(.84f), Color.Black.copy(.48f), Color.Black.copy(.20f)))))
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(.18f), Color.Transparent, Color.Black.copy(.72f)))))
         Column(Modifier.fillMaxSize().padding(horizontal = 26.dp, vertical = 12.dp)) {
@@ -157,7 +157,7 @@ internal fun LandscapePagerCore(
                                 color = Color.Black.copy(.30f),
                                 border = BorderStroke(if (selected) 2.dp else 1.dp, Color.White.copy(if (selected) .88f else .20f))
                             ) {
-                                PagerImage(candidate.coverPath ?: candidate.bannerPath ?: candidate.iconPath, candidate.fallbackIcon, Modifier.fillMaxSize())
+                                PagerImage(userArtworkPath(candidate) ?: candidate.coverPath ?: candidate.bannerPath ?: candidate.iconPath, candidate.fallbackIcon, Modifier.fillMaxSize())
                             }
                         }
                     }
@@ -190,9 +190,12 @@ internal fun LandscapePagerCore(
     }
 }
 
+private fun userArtworkPath(item: LibraryItem): String? =
+    item.iconPath?.takeIf { it.endsWith(".user.png", ignoreCase = true) }
+
 @Composable
 private fun PagerImage(path: String?, fallback: Bitmap?, modifier: Modifier) {
-    val image by produceState<Bitmap?>(fallback, path) {
+    val image by produceState<Bitmap?>(fallback, path, fallback) {
         value = withContext(Dispatchers.IO) {
             path?.takeIf { File(it).isFile }?.let { BitmapFactory.decodeFile(it) } ?: fallback
         }

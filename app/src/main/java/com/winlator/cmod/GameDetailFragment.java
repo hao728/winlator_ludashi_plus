@@ -61,11 +61,15 @@ public class GameDetailFragment extends Fragment {
 
         ((AppCompatActivity) requireActivity()).getSupportActionBar().setTitle(shortcut.name);
         String baseName = FileUtils.getBasename(shortcut.file.getPath());
+        File userArtwork = new File(Environment.getExternalStorageDirectory(),
+                "Winlator/icons/" + baseName + ".user.png");
         File banner = new File(Environment.getExternalStorageDirectory(),
                 "Winlator/banners/" + baseName + ".png");
         File cover = new File(Environment.getExternalStorageDirectory(),
                 "Winlator/covers/" + baseName + ".png");
-        String artworkPath = banner.exists() ? banner.getPath() : cover.exists() ? cover.getPath() : null;
+        String artworkPath = userArtwork.isFile() ? userArtwork.getPath()
+                : banner.isFile() ? banner.getPath()
+                : cover.isFile() ? cover.getPath() : null;
         Bitmap fallback = shortcut.icon;
 
         View content = GameDetailComposeHost.create(
