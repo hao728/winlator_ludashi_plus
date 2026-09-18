@@ -126,7 +126,9 @@ class ThemedFileRowLayout @JvmOverloads constructor(
         findViewById<View>(R.id.FileRowDivider)?.setBackgroundColor(outline)
         findViewById<TextView>(R.id.TVFileName)?.setTextColor(onSurface)
         findViewById<TextView>(R.id.TVFileDetails)?.setTextColor(muted)
-        findViewById<ImageView>(R.id.IVIcon)?.imageTintList = ColorStateList.valueOf(muted)
+        findViewById<ImageView>(R.id.IVIcon)?.let { icon ->
+            if (icon.tag == null) icon.imageTintList = ColorStateList.valueOf(muted)
+        }
         findViewById<ImageView>(R.id.BTFileMenu)?.imageTintList = ColorStateList.valueOf(muted)
     }
 }
