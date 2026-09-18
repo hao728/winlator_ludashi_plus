@@ -182,7 +182,7 @@ public class RenderingSidebarPolisherView extends View {
         if (spinner == null) return;
         spinner.setBackgroundColor(Color.TRANSPARENT);
         spinner.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        spinner.setPadding(dp(8), 0, 0, 0);
+        spinner.setPaddingRelative(dp(8), 0, 0, 0);
 
         View parent = spinner.getParent() instanceof View ? (View) spinner.getParent() : null;
         if (parent instanceof LinearLayout) {

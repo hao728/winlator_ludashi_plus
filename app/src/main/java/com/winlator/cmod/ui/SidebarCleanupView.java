@@ -101,7 +101,7 @@ public class SidebarCleanupView extends View {
             lp.width = ViewGroup.LayoutParams.WRAP_CONTENT;
             lp.height = dp(40);
             lp.weight = 0f;
-            lp.leftMargin = dp(12);
+            lp.setMarginStart(dp(12));
             spinner.setLayoutParams(lp);
         }
         spinner.setMinimumWidth(0);
@@ -194,7 +194,7 @@ public class SidebarCleanupView extends View {
         checkBox.setTextColor(resolveColor(R.attr.ingameSidebarOnSurface, 0xFFFFFFFF));
         checkBox.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
         checkBox.setGravity(Gravity.CENTER_VERTICAL);
-        checkBox.setPadding(0, 0, dp(4), 0);
+        checkBox.setPaddingRelative(0, 0, dp(4), 0);
         checkBox.setChecked(WinlatorHUD.isOptionEnabled(getContext(), bit));
         checkBox.setOnCheckedChangeListener((buttonView, isChecked) ->
                 WinlatorHUD.setOptionPreference(getContext(), bit, isChecked));
@@ -239,14 +239,14 @@ public class SidebarCleanupView extends View {
             spinner.setLayoutParams(lp);
         }
         spinner.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-        spinner.setPadding(dp(9), 0, dp(8), 0);
+        spinner.setPaddingRelative(dp(9), 0, dp(8), 0);
 
         ImageView settings = root.findViewById(R.id.BTInputControlsSettings);
         if (settings != null) {
             ViewGroup.LayoutParams settingsRaw = settings.getLayoutParams();
             if (settingsRaw instanceof LinearLayout.LayoutParams) {
                 LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) settingsRaw;
-                lp.leftMargin = dp(8);
+                lp.setMarginStart(dp(8));
                 settings.setLayoutParams(lp);
             }
         }

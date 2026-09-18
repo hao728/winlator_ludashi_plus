@@ -75,8 +75,8 @@ public class IngameSidebarThemeLayout extends FrameLayout {
             if (legacyRoot.getChildCount() >= 3) {
                 legacyRoot.getChildAt(0).setVisibility(View.GONE);
                 legacyRoot.getChildAt(1).setVisibility(View.GONE);
-                legacyRoot.setPadding(dp(64), legacyRoot.getPaddingTop(),
-                        legacyRoot.getPaddingRight(), legacyRoot.getPaddingBottom());
+                legacyRoot.setPaddingRelative(dp(64), legacyRoot.getPaddingTop(),
+                        legacyRoot.getPaddingEnd(), legacyRoot.getPaddingBottom());
             }
         }
 
