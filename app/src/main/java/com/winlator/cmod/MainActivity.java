@@ -7,6 +7,7 @@ import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
@@ -433,12 +434,18 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         }
     }
 
+    private boolean isLandscapeOrientation() {
+        return getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
+    }
+
     public void setBottomNavigationVisible(boolean visible) {
-        if (bottomNavigation != null) bottomNavigation.setVisibility(visible ? View.VISIBLE : View.GONE);
+        if (bottomNavigation == null) return;
+        bottomNavigation.setVisibility((visible && !isLandscapeOrientation()) ? View.VISIBLE : View.GONE);
     }
 
     public void setMainToolbarVisible(boolean visible) {
-        if (mainToolbar != null) mainToolbar.setVisibility(visible ? View.VISIBLE : View.GONE);
+        if (mainToolbar == null) return;
+        mainToolbar.setVisibility((visible && !isLandscapeOrientation()) ? View.VISIBLE : View.GONE);
     }
 
     public void navigateToMainDestination(int menuItemId) {
