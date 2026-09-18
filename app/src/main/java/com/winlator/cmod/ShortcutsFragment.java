@@ -890,9 +890,14 @@ public class ShortcutsFragment extends Fragment {
     private void addShortcutToScreen(Shortcut shortcut) {
         ShortcutManager shortcutManager = getSystemService(requireContext(), ShortcutManager.class);
         if (shortcutManager != null && shortcutManager.isRequestPinShortcutSupported()) {
-            Bitmap bmp = getLauncherShortcutBitmap(shortcut, shortcutManager);
-            if (bmp == null) return;
-
+            File iconDir = getImagesDir(false);
+            String baseName = FileUtils.getBasename(shortcut.file.getPath());
+            File userIconFile = new File(iconDir, baseName + ".user.png");
+            File autoIconFile = new File(iconDir, baseName + ".png");
+            File imgFile = userIconFile.isFile() ? userIconFile : autoIconFile;
+            Bitmap bmp = imgFile.isFile() ? BitmapFactory.decodeFile(imgFile.getPath()) : shortcut.icon;
+            if (bmp == null) bmp = BitmapFactory.decodeResource(getResources(), R.drawable.icon_wine);
+            
             shortcutManager.requestPinShortcut(buildScreenShortCut(shortcut.name, shortcut.name, shortcut.container.id,
                     shortcut.file.getPath(), Icon.createWithBitmap(bmp), shortcut.getExtra("uuid")), null);
         }
