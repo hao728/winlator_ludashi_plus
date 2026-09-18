@@ -336,12 +336,13 @@ void EGLRenderer::updateScene() {
 }
 
 void EGLRenderer::collectRenderableWindows(Window *window, int x, int y) {
-    if (!window->mapped || !window->inputOutput || window->width <= 1 || window->height <= 1) return;
+    if (!window->mapped || !window->inputOutput) return;
     
     if (window != windowManager->getRootWindow()) {
         bool viewable = env->CallBooleanMethod(window->attributes, cache->windowAttributesIsEnabled);
+        bool renderable = window->width > 1 && window->height > 1;
 
-        if (viewable) {
+        if (viewable && renderable) {
             auto renderableWindow = std::make_unique<struct RenderableWindow>();
             renderableWindow->rootX = x;
             renderableWindow->rootY = y;
