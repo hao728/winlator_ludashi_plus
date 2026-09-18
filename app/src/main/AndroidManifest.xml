@@ -60,6 +60,7 @@
             android:name="com.winlator.cmod.ui.settings.ContainersSettingsActivity"
             android:theme="@style/AppThemeFullscreen.Dark"
             android:screenOrientation="sensor"
+            android:windowSoftInputMode="adjustResize"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|density|navigation"
             android:exported="false" />
 
