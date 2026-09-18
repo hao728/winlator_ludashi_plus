@@ -14,6 +14,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.drawable.Icon;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.util.Log;
@@ -486,6 +487,7 @@ public class ShortcutsFragment extends Fragment {
             allShortcuts.addAll(shortcuts);
         }
         publishLibraryItems();
+        syncDynamicAppShortcuts();
     }
 
     private Shortcut findShortcut(String shortcutPath) {
@@ -672,6 +674,7 @@ public class ShortcutsFragment extends Fragment {
         if (activity == null) return;
         shortcut.putExtra("lastRunAt", String.valueOf(System.currentTimeMillis()));
         shortcut.saveData();
+        syncDynamicAppShortcuts();
         if (libraryController != null) {
             libraryController.setSelectedShortcutPath(shortcut.file.getPath());
             publishLibraryItems();
@@ -789,6 +792,88 @@ public class ShortcutsFragment extends Fragment {
         } catch (IOException ignored) {}
     }
 
+    private Bitmap getLauncherShortcutBitmap(Shortcut shortcut, ShortcutManager shortcutManager) {
+        File iconDir = getImagesDir(false);
+        String baseName = FileUtils.getBasename(shortcut.file.getPath());
+        File userIconFile = new File(iconDir, baseName + ".user.png");
+        File autoIconFile = new File(iconDir, baseName + ".png");
+        File imgFile = userIconFile.isFile() ? userIconFile : autoIconFile;
+
+        Bitmap bitmap = imgFile.isFile() ? BitmapFactory.decodeFile(imgFile.getPath()) : shortcut.icon;
+        if (bitmap == null) bitmap = BitmapFactory.decodeResource(getResources(), R.drawable.icon_wine);
+        if (bitmap == null) return null;
+
+        int maxWidth = Math.max(1, shortcutManager.getIconMaxWidth());
+        int maxHeight = Math.max(1, shortcutManager.getIconMaxHeight());
+        if (bitmap.getWidth() <= maxWidth && bitmap.getHeight() <= maxHeight) return bitmap;
+
+        float scale = Math.min((float) maxWidth / bitmap.getWidth(), (float) maxHeight / bitmap.getHeight());
+        int width = Math.max(1, Math.round(bitmap.getWidth() * scale));
+        int height = Math.max(1, Math.round(bitmap.getHeight() * scale));
+        return Bitmap.createScaledBitmap(bitmap, width, height, true);
+    }
+
+    private void syncDynamicAppShortcuts() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N_MR1 || !isAdded()) return;
+
+        ShortcutManager shortcutManager = getSystemService(requireContext(), ShortcutManager.class);
+        if (shortcutManager == null) return;
+
+        try {
+            int maxCount = shortcutManager.getMaxShortcutCountPerActivity();
+            if (maxCount <= 0 || allShortcuts.isEmpty()) {
+                shortcutManager.removeAllDynamicShortcuts();
+                return;
+            }
+
+            ArrayList<Shortcut> candidates = new ArrayList<>();
+            for (Shortcut shortcut : allShortcuts) {
+                if (shortcut != null && shortcut.file != null && shortcut.container != null) {
+                    shortcut.genUUID();
+                    candidates.add(shortcut);
+                }
+            }
+
+            candidates.sort((first, second) -> {
+                boolean firstFavorite = "1".equals(first.getExtra("favorite", "0"));
+                boolean secondFavorite = "1".equals(second.getExtra("favorite", "0"));
+                if (firstFavorite != secondFavorite) return firstFavorite ? -1 : 1;
+
+                int recent = Long.compare(parseLastRunAt(second), parseLastRunAt(first));
+                if (recent != 0) return recent;
+                return first.name.compareToIgnoreCase(second.name);
+            });
+
+            ArrayList<ShortcutInfo> dynamicShortcuts = new ArrayList<>();
+            int count = Math.min(maxCount, candidates.size());
+            for (int i = 0; i < count; i++) {
+                Shortcut shortcut = candidates.get(i);
+                String uuid = shortcut.getExtra("uuid");
+                if (uuid.isEmpty()) continue;
+
+                Bitmap bitmap = getLauncherShortcutBitmap(shortcut, shortcutManager);
+                if (bitmap == null) continue;
+
+                Intent intent = new Intent(requireContext(), XServerDisplayActivity.class);
+                intent.setAction(Intent.ACTION_VIEW);
+                intent.putExtra("container_id", shortcut.container.id);
+                intent.putExtra("shortcut_path", shortcut.file.getPath());
+
+                dynamicShortcuts.add(new ShortcutInfo.Builder(requireContext(), uuid)
+                        .setShortLabel(shortcut.name)
+                        .setLongLabel(shortcut.name)
+                        .setIcon(Icon.createWithBitmap(bitmap))
+                        .setIntent(intent)
+                        .setRank(dynamicShortcuts.size())
+                        .build());
+            }
+
+            shortcutManager.setDynamicShortcuts(dynamicShortcuts);
+        } catch (Exception e) {
+            Log.w(TAG, "Unable to sync dynamic app shortcuts", e);
+        }
+    }
+
     private ShortcutInfo buildScreenShortCut(String shortLabel, String longLabel, int containerId, String shortcutPath, Icon icon, String uuid) {
         Intent intent = new Intent(getActivity(), XServerDisplayActivity.class);
         intent.setAction(Intent.ACTION_VIEW);
@@ -805,14 +890,9 @@ public class ShortcutsFragment extends Fragment {
     private void addShortcutToScreen(Shortcut shortcut) {
         ShortcutManager shortcutManager = getSystemService(requireContext(), ShortcutManager.class);
         if (shortcutManager != null && shortcutManager.isRequestPinShortcutSupported()) {
-            File iconDir = getImagesDir(false);
-            String baseName = FileUtils.getBasename(shortcut.file.getPath());
-            File userIconFile = new File(iconDir, baseName + ".user.png");
-            File autoIconFile = new File(iconDir, baseName + ".png");
-            File imgFile = userIconFile.isFile() ? userIconFile : autoIconFile;
-            Bitmap bmp = imgFile.isFile() ? BitmapFactory.decodeFile(imgFile.getPath()) : shortcut.icon;
-            if (bmp == null) bmp = BitmapFactory.decodeResource(getResources(), R.drawable.icon_wine);
-            
+            Bitmap bmp = getLauncherShortcutBitmap(shortcut, shortcutManager);
+            if (bmp == null) return;
+
             shortcutManager.requestPinShortcut(buildScreenShortCut(shortcut.name, shortcut.name, shortcut.container.id,
                     shortcut.file.getPath(), Icon.createWithBitmap(bmp), shortcut.getExtra("uuid")), null);
         }
