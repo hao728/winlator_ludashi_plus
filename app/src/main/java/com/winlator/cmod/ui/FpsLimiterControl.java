@@ -85,6 +85,12 @@ public class FpsLimiterControl extends LinearLayout {
         valueLabel.setTextColor(onSurfaceVariant);
         valueLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         valueLabel.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        // The limiter value is always Latin/numeric ("Off", "Custom", "60 FPS").
+        // Keep its text direction LTR while the row itself still mirrors normally in RTL.
+        valueLabel.setTextDirection(View.TEXT_DIRECTION_LTR);
+        valueLabel.setTextAlignment(View.TEXT_ALIGNMENT_VIEW_END);
+        valueLabel.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        valueLabel.setMinWidth(dp(64));
         valueRow.addView(valueLabel, new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
 
         TextView help = new TextView(context);
