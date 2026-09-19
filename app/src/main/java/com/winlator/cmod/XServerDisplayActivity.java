@@ -1602,6 +1602,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 classicHud = new FrameRating(this, graphicsDriverConfig);
                 classicHud.setVisibility(View.GONE);
                 rootView.addView(classicHud);
+                classicHud.enableByUser();
                 renderer.setFrameRating(classicHud);
             } else if (hudMode == 2) {
 

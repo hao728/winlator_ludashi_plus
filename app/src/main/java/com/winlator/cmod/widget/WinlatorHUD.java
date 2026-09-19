@@ -1223,6 +1223,19 @@ public class WinlatorHUD extends View {
 
     private void ensureVisible() {
         if (userEnabled) {
+            if (getParent() instanceof View) {
+                View parent = (View) getParent();
+                if (parent.getWidth() > 0 && parent.getHeight() > 0
+                        && getWidth() > 0 && getHeight() > 0) {
+                    float x = Math.max(0f, Math.min(getX(), Math.max(0, parent.getWidth() - getWidth())));
+                    float y = Math.max(0f, Math.min(getY(), Math.max(0, parent.getHeight() - getHeight())));
+                    if (x != getX() || y != getY()) {
+                        setX(x);
+                        setY(y);
+                        savePosition();
+                    }
+                }
+            }
             if (getVisibility() != VISIBLE) setVisibility(VISIBLE);
             scheduleRedraw();
         }
@@ -1286,7 +1299,7 @@ public class WinlatorHUD extends View {
         showMask = mask;
         hudAlpha = prefs.getInt(KEY_ALPHA, 100) / 100f;
         vertical = prefs.getBoolean(KEY_VERT, false);
-        float scale = prefs.getFloat(KEY_SCALE, 1f);
+        float scale = Math.max(0.5f, prefs.getFloat(KEY_SCALE, 1f));
         setScaleX(scale);
         setScaleY(scale);
         setX(prefs.getFloat(KEY_X, 16f));
@@ -1329,6 +1342,7 @@ public class WinlatorHUD extends View {
         startStatsThread();
         setVisibility(VISIBLE);
         scheduleRedraw();
+        uiHandler.postDelayed(this::ensureVisible, 150);
     }
 
     public void disableByUser() {
@@ -1474,6 +1488,7 @@ public class WinlatorHUD extends View {
     public void setDataSource(Object dataSource) {}
 
     public void setHudScale(float scale) {
+        scale = Math.max(0.5f, scale);
         setScaleX(scale);
         setScaleY(scale);
         prefs.edit().putFloat(KEY_SCALE, scale).apply();
@@ -1505,6 +1520,14 @@ public class WinlatorHUD extends View {
             rendererActive = true;
             userEnabled = true;
             prefs.edit().putBoolean(KEY_VIS, true).apply();
+            setX(16f);
+            setY(16f);
+            savePosition();
+            setHudScale(1f);
+            showMask = SHOW_DEFAULT;
+            prefs.edit().putInt(KEY_SHOW, showMask).apply();
+            setHudAlpha(1f);
+            requestRelayout();
             if (!mesaRendererActive) refreshBackendRenderer(true);
             startStatsThread();
             setVisibility(VISIBLE);
@@ -1538,4 +1561,3 @@ public class WinlatorHUD extends View {
         }
     }
 }
-
