@@ -73,6 +73,7 @@ import com.winlator.cmod.core.FrameGenManager;
 import com.winlator.cmod.core.FrameGenDisplayFit;
 import com.winlator.cmod.core.LosslessDll;
 import com.winlator.cmod.core.FileUtils;
+import com.winlator.cmod.core.GameSaveManager;
 import com.winlator.cmod.core.GPUInformation;
 import com.winlator.cmod.core.KeyValueSet;
 import com.winlator.cmod.core.OnExtractFileListener;
@@ -1074,6 +1075,15 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     break;
                 }
             }
+            if (shortcut != null && GameSaveManager.isAutoBackupEnabled(shortcut)) {
+                GameSaveManager.BackupResult saveResult = GameSaveManager.backup(shortcut, true);
+                if (saveResult.ok) {
+                    Log.i("GameSaveManager", "Auto backup completed: " + saveResult.fileCount + " files");
+                } else {
+                    Log.w("GameSaveManager", "Auto backup skipped/failed: " + saveResult.error);
+                }
+            }
+
             preloaderDialog.closeOnUiThread();
             runOnUiThread(() -> AppUtils.restartApplication(getApplicationContext()));
         });

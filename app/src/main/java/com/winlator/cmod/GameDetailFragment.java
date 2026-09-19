@@ -10,7 +10,6 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -25,6 +24,7 @@ import com.winlator.cmod.core.FileUtils;
 import com.winlator.cmod.core.WineInfo;
 import com.winlator.cmod.ui.library.GameDetailCallbacks;
 import com.winlator.cmod.ui.library.GameDetailComposeHost;
+import com.winlator.cmod.ui.library.GameSavesComposeDialog;
 import com.winlator.cmod.ui.shortcut.ShortcutSettingsComposeDialog;
 
 import java.io.File;
@@ -96,9 +96,8 @@ public class GameDetailFragment extends Fragment {
                     }
 
                     @Override
-                    public void onGameFolder() {
-                        Toast.makeText(requireContext(), shortcut.container.getDesktopDir().getPath(),
-                                Toast.LENGTH_LONG).show();
+                    public void onSaves() {
+                        GameSavesComposeDialog.show(GameDetailFragment.this, shortcut);
                     }
 
                     @Override

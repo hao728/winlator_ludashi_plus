@@ -70,7 +70,7 @@ interface GameDetailCallbacks {
     fun onPlay()
     fun onConfigure()
     fun onArguments()
-    fun onGameFolder()
+    fun onSaves()
     fun onFavorite(favorite: Boolean)
     fun onRemove()
 }
@@ -178,7 +178,7 @@ private fun LandscapeDetail(title: String, subtitle: String, artwork: Bitmap?, f
                     }
                     Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        DetailAction(Icons.Outlined.Folder, "Game folder", Modifier.weight(1f), callbacks::onGameFolder)
+                        DetailAction(Icons.Outlined.Folder, "Saves", Modifier.weight(1f), callbacks::onSaves)
                         DetailAction(Icons.Outlined.DeleteOutline, "Remove", Modifier.weight(1f), callbacks::onRemove, true)
                     }
                 }
@@ -211,7 +211,7 @@ private fun PortraitDetail(title: String, subtitle: String, artwork: Bitmap?, fa
             ) { Icon(Icons.Outlined.PlayArrow, null); Spacer(Modifier.size(8.dp)); Text("Play", fontWeight = FontWeight.Bold) }
             DetailAction(Icons.Outlined.Settings, "Configure", Modifier.fillMaxWidth(), callbacks::onConfigure)
             DetailAction(Icons.Outlined.PlayArrow, "Enter container", Modifier.fillMaxWidth(), callbacks::onArguments)
-            DetailAction(Icons.Outlined.Folder, "Game folder", Modifier.fillMaxWidth(), callbacks::onGameFolder)
+            DetailAction(Icons.Outlined.Folder, "Saves", Modifier.fillMaxWidth(), callbacks::onSaves)
             DetailAction(Icons.Outlined.DeleteOutline, "Remove", Modifier.fillMaxWidth(), callbacks::onRemove, true)
             Spacer(Modifier.height(12.dp))
         }
