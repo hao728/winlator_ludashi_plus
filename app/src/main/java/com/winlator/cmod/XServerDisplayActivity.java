@@ -1075,7 +1075,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     break;
                 }
             }
-            if (shortcut != null && GameSaveManager.isAutoBackupEnabled(shortcut)) {
+            if (shortcut != null && GameSaveManager.shouldAutoBackup(this, shortcut)) {
                 GameSaveManager.BackupResult saveResult = GameSaveManager.backup(shortcut, true);
                 if (saveResult.ok) {
                     Log.i("GameSaveManager", "Auto backup completed: " + saveResult.fileCount + " files");

@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.Fragment
@@ -77,6 +78,8 @@ object GameSavesComposeDialog {
 @Composable
 private fun GameSavesPanel(shortcut: Shortcut, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val globalAutoBackup = GameSaveManager.isGlobalAutoBackupEnabled(context)
     var roots by remember(shortcut.file.path) { mutableStateOf<List<String>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
@@ -165,18 +168,19 @@ private fun GameSavesPanel(shortcut: Shortcut, onClose: () -> Unit) {
                     Column(Modifier.weight(1f)) {
                         Text("Automatic backup", fontWeight = FontWeight.SemiBold)
                         Text(
-                            "Replace auto-latest.zip when the game exits",
+                            if (globalAutoBackup) "Enabled globally in Winlator Settings"
+                            else "Replace auto-latest.zip when the game exits",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     Switch(
-                        checked = autoBackup,
+                        checked = globalAutoBackup || autoBackup,
                         onCheckedChange = {
                             autoBackup = it
                             GameSaveManager.setAutoBackupEnabled(shortcut, it)
                         },
-                        enabled = !busy
+                        enabled = !busy && !globalAutoBackup
                     )
                 }
 

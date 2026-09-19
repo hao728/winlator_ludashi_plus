@@ -46,6 +46,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -85,6 +86,7 @@ import com.winlator.cmod.container.Shortcut
 import com.winlator.cmod.core.DefaultVersion
 import com.winlator.cmod.core.FileUtils
 import com.winlator.cmod.core.GPUInformation
+import com.winlator.cmod.core.GameSaveManager
 import com.winlator.cmod.core.LosslessDll
 import com.winlator.cmod.core.OpenGLDriverDefaults
 import com.winlator.cmod.core.StringUtils
@@ -92,7 +94,6 @@ import com.winlator.cmod.fexcore.FEXCorePresetManager
 import com.winlator.cmod.inputcontrols.InputControlsManager
 import com.winlator.cmod.inputcontrols.ExternalController
 import com.winlator.cmod.midi.MidiManager
-import com.winlator.cmod.ui.library.GameSavesComposeDialog
 import com.winlator.cmod.ui.settings.ContainersSettingsActivity
 import com.winlator.cmod.ui.settings.CpuSelectorRow
 import com.winlator.cmod.ui.settings.DriverOption
@@ -128,7 +129,9 @@ import com.winlator.cmod.ui.settings.normalizeResolution
 import com.winlator.cmod.ui.settings.readConfig
 import com.winlator.cmod.ui.settings.writeConfig
 import com.winlator.cmod.winhandler.WinHandler
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import java.io.File
 import kotlin.math.roundToInt
@@ -271,6 +274,8 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
     var sharpnessDenoise by mutableStateOf(shortcut.getExtra("sharpnessDenoise", "100"))
     var lcAll by mutableStateOf(shortcut.getExtra("lc_all", container.getLC_ALL()))
     var midiSoundFont by mutableStateOf(shortcut.getExtra("midiSoundFont", container.getMIDISoundFont()))
+    var gameSavesEnabled by mutableStateOf(GameSaveManager.isEnabled(shortcut))
+    var autoSaveBackup by mutableStateOf(GameSaveManager.isAutoBackupEnabled(shortcut))
     var execArgs by mutableStateOf(shortcut.getExtra("execArgs"))
     var autoMesaGlVersionOverride by mutableStateOf(
         shortcut.getExtra(
@@ -530,10 +535,6 @@ internal fun ShortcutEditorV2(fragment: Fragment, shortcut: Shortcut, close: () 
         }
     }
 
-    fun openGameSaves() {
-        GameSavesComposeDialog.show(fragment, shortcut)
-    }
-
     fun createContainer() {
         context.startActivity(Intent(context, ContainersSettingsActivity::class.java))
     }
@@ -608,7 +609,7 @@ internal fun ShortcutEditorV2(fragment: Fragment, shortcut: Shortcut, close: () 
                             category, state, catalog, screenEntries, graphicsEntries, graphicsWrapperEntries, audioEntries,
                             wrapperEntries, localeEntries, soundFonts, gpuNames, fexPresets, boxPresets,
                             profiles, containers, ::environmentLabel, ::changeContainer, ::createContainer, ::enterContainer,
-                            ::openGameSaves, ::installRuntime, ::installDriver, context
+                            ::installRuntime, ::installDriver, context
                         )
                     }
                 }
@@ -634,10 +635,190 @@ internal fun ShortcutEditorV2(fragment: Fragment, shortcut: Shortcut, close: () 
                             category, state, catalog, screenEntries, graphicsEntries, graphicsWrapperEntries, audioEntries,
                             wrapperEntries, localeEntries, soundFonts, gpuNames, fexPresets, boxPresets,
                             profiles, containers, ::environmentLabel, ::changeContainer, ::createContainer, ::enterContainer,
-                            ::openGameSaves, ::installRuntime, ::installDriver, context
+                            ::installRuntime, ::installDriver, context
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShortcutGameSavesCard(s: ShortcutEditorStateV2, context: Context) {
+    val globalEnabled = GameSaveManager.isGlobalAutoBackupEnabled(context)
+    val active = globalEnabled || s.gameSavesEnabled
+    val scope = rememberCoroutineScope()
+    var roots by remember(s.shortcut.file.path) { mutableStateOf<List<String>>(emptyList()) }
+    var latestName by remember(s.shortcut.file.path) {
+        mutableStateOf(GameSaveManager.getLatestBackup(s.shortcut)?.name)
+    }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var refreshKey by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(active, refreshKey) {
+        if (active) {
+            roots = withContext(Dispatchers.IO) { GameSaveManager.getSaveRoots(s.shortcut) }
+            latestName = GameSaveManager.getLatestBackup(s.shortcut)?.name
+        } else {
+            roots = emptyList()
+            latestName = GameSaveManager.getLatestBackup(s.shortcut)?.name
+        }
+    }
+
+    SettingsCard {
+        SettingToggle(
+            "Game Saves",
+            active,
+            enabled = !globalEnabled
+        ) { enabled ->
+            s.gameSavesEnabled = enabled
+            if (!enabled) s.autoSaveBackup = false
+            GameSaveManager.setEnabled(s.shortcut, enabled)
+        }
+
+        if (globalEnabled) {
+            SettingsDivider()
+            Text(
+                "Enabled globally in Winlator Settings. All shortcuts are backed up on exit.",
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        if (active) {
+            SettingsDivider()
+            SettingToggle(
+                "Automatic backup",
+                globalEnabled || s.autoSaveBackup,
+                enabled = !globalEnabled
+            ) { enabled ->
+                s.autoSaveBackup = enabled
+                GameSaveManager.setAutoBackupEnabled(s.shortcut, enabled)
+            }
+
+            SettingsDivider()
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Text("Backup folder", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    "Winlator/Saves/${GameSaveManager.getGameDir(s.shortcut).name}/",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text("Latest backup", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    latestName ?: "No backup yet",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text("Save locations", style = MaterialTheme.typography.labelLarge)
+                if (roots.isEmpty()) {
+                    Text(
+                        "No specific save folder detected.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    roots.forEach { root ->
+                        Text("• $root", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+
+            SettingsDivider()
+            OutlinedButton(
+                onClick = {
+                    if (!busy) {
+                        busy = true
+                        message = "Scanning save locations…"
+                        scope.launch {
+                            roots = withContext(Dispatchers.IO) {
+                                GameSaveManager.rediscoverSaveRoots(s.shortcut)
+                            }
+                            message = if (roots.isEmpty()) {
+                                "No per-game save folder detected."
+                            } else {
+                                "Detected ${roots.size} save location${if (roots.size == 1) "" else "s"}."
+                            }
+                            refreshKey++
+                            busy = false
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                enabled = !busy
+            ) {
+                Text("Rescan save locations")
+            }
+
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Button(
+                    onClick = {
+                        if (!busy) {
+                            busy = true
+                            message = "Backing up saves…"
+                            scope.launch {
+                                val result = withContext(Dispatchers.IO) {
+                                    GameSaveManager.backup(s.shortcut, false)
+                                }
+                                message = when {
+                                    result.ok && result.wholeProfile ->
+                                        "Backup complete: ${result.fileCount} files. The Wine profile was used because no per-game folder was detected."
+                                    result.ok -> "Backup complete: ${result.fileCount} files."
+                                    else -> "Backup failed: ${result.error ?: "unknown error"}"
+                                }
+                                refreshKey++
+                                busy = false
+                            }
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    enabled = !busy
+                ) {
+                    Text("Back up now")
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        if (!busy) {
+                            busy = true
+                            message = "Restoring latest backup…"
+                            scope.launch {
+                                val result = withContext(Dispatchers.IO) {
+                                    GameSaveManager.restoreLatest(s.shortcut)
+                                }
+                                message = if (result.ok) {
+                                    "Restored ${result.fileCount} files."
+                                } else {
+                                    "Restore failed: ${result.error ?: "unknown error"}"
+                                }
+                                refreshKey++
+                                busy = false
+                            }
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    enabled = !busy && latestName != null
+                ) {
+                    Text("Restore")
+                }
+            }
+
+            message?.let {
+                Text(
+                    it,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -688,7 +869,6 @@ private fun ShortcutCategoryV2(
     changeContainer: (Int) -> Unit,
     createContainer: () -> Unit,
     enterContainer: () -> Unit,
-    openGameSaves: () -> Unit,
     installRuntime: (String, String, (String) -> Unit) -> Unit,
     installDriver: (DriverOption) -> Unit,
     context: Context
@@ -782,29 +962,7 @@ private fun ShortcutCategoryV2(
                     s.midiSoundFont = if (it == "Disabled") "" else it; s.extra("midiSoundFont", s.midiSoundFont.ifBlank { null })
                 }
             }
-            SettingsCard {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Outlined.Folder,
-                        null,
-                        modifier = Modifier.size(22.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.size(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Game Saves", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "Back up, restore and manage save locations",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    TextButton(onClick = openGameSaves) { Text("Manage") }
-                }
-            }
+            ShortcutGameSavesCard(s, context)
         }
 
         "Video" -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

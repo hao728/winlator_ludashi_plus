@@ -109,6 +109,7 @@ data class SettingsModel(
     val shareClipboard: Boolean,
     val pauseWine: Boolean,
     val removeLoadingBar: Boolean,
+    val gameSavesAllShortcuts: Boolean,
     val wineDebug: Boolean,
     val wineDebugChannels: String,
     val box64Logs: Boolean,
@@ -240,6 +241,17 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
             item("winlator-path") { NavigationRow(Icons.Outlined.Storage, "Winlator Path", model.winlatorPath, callbacks::onChooseWinlatorPath) }
             item("shortcut-path") { NavigationRow(Icons.Outlined.FolderOpen, "Shortcut Export Path", model.shortcutPath, callbacks::onChooseShortcutPath) }
 
+            item("game-saves-title") { SectionTitle("GAME SAVES") }
+            item("game-saves") {
+                GroupCard {
+                    ToggleRow(
+                        "Game Saves for all shortcuts",
+                        model.gameSavesAllShortcuts,
+                        "Automatically detect and back up saves when any shortcut exits"
+                    ) { callbacks.onBooleanChanged("game_saves_all_shortcuts", it) }
+                }
+            }
+
             item("big-picture-title") { SectionTitle("BIG PICTURE MODE") }
             item("big-picture") {
                 GroupCard {
@@ -370,9 +382,26 @@ private fun SmallIcon(icon: ImageVector) {
 }
 
 @Composable
-private fun ToggleRow(title: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(start = 15.dp, end = 11.dp, top = 9.dp, bottom = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+private fun ToggleRow(
+    title: String,
+    checked: Boolean,
+    subtitle: String? = null,
+    onChecked: (Boolean) -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 15.dp, end = 11.dp, top = 9.dp, bottom = 9.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
         Switch(checked = checked, onCheckedChange = onChecked)
     }
 }

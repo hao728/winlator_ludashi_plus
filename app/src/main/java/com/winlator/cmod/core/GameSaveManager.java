@@ -1,7 +1,10 @@
 package com.winlator.cmod.core;
 
+import android.content.Context;
 import android.os.Environment;
 import android.util.Log;
+
+import androidx.preference.PreferenceManager;
 
 import com.winlator.cmod.container.Shortcut;
 import com.winlator.cmod.xenvironment.ImageFs;
@@ -41,7 +44,9 @@ import java.util.zip.ZipOutputStream;
  */
 public final class GameSaveManager {
     private static final String TAG = "GameSaveManager";
+    public static final String EXTRA_ENABLED = "gameSavesEnabled";
     public static final String EXTRA_AUTO_BACKUP = "autoSaveBackup";
+    public static final String PREF_ALL_SHORTCUTS = "game_saves_all_shortcuts";
     private static final String AUTO_FILE = "auto-latest.zip";
     private static final String MAP_FILE = "save.json";
     private static final int KEEP_THRESHOLD = 50;
@@ -105,13 +110,34 @@ public final class GameSaveManager {
         return new File(root, sanitize(shortcut.name));
     }
 
+    public static boolean isEnabled(Shortcut shortcut) {
+        return "1".equals(shortcut.getExtra(EXTRA_ENABLED, "0"));
+    }
+
+    public static void setEnabled(Shortcut shortcut, boolean enabled) {
+        shortcut.putExtra(EXTRA_ENABLED, enabled ? "1" : "0");
+        if (!enabled) shortcut.putExtra(EXTRA_AUTO_BACKUP, "0");
+        shortcut.saveData();
+    }
+
     public static boolean isAutoBackupEnabled(Shortcut shortcut) {
         return "1".equals(shortcut.getExtra(EXTRA_AUTO_BACKUP, "0"));
     }
 
     public static void setAutoBackupEnabled(Shortcut shortcut, boolean enabled) {
         shortcut.putExtra(EXTRA_AUTO_BACKUP, enabled ? "1" : "0");
+        if (enabled) shortcut.putExtra(EXTRA_ENABLED, "1");
         shortcut.saveData();
+    }
+
+    public static boolean isGlobalAutoBackupEnabled(Context context) {
+        return PreferenceManager.getDefaultSharedPreferences(context)
+                .getBoolean(PREF_ALL_SHORTCUTS, false);
+    }
+
+    public static boolean shouldAutoBackup(Context context, Shortcut shortcut) {
+        return isGlobalAutoBackupEnabled(context)
+                || (isEnabled(shortcut) && isAutoBackupEnabled(shortcut));
     }
 
     public static File getLatestBackup(Shortcut shortcut) {
