@@ -3,7 +3,6 @@ package com.winlator.cmod.ui.library
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.view.ViewGroup
-import android.view.WindowManager
 import com.winlator.cmod.R
 import androidx.activity.ComponentDialog
 import androidx.compose.foundation.layout.Arrangement
@@ -60,8 +59,8 @@ object GameSavesComposeDialog {
             setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
             decorView.setBackgroundColor(Color.TRANSPARENT)
-            addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            attributes = attributes.apply { dimAmount = 0.38f }
+            clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            setDimAmount(0f)
         }
         dialog.setContentView(ComposeView(fragment.requireContext()).apply {
             setBackgroundColor(Color.TRANSPARENT)
@@ -281,6 +280,6 @@ private fun GameSavesPanel(shortcut: Shortcut, onClose: () -> Unit) {
 }
 
 private fun backupLabel(file: File): String {
-    val date = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(file.lastModified()))
-    return "${file.name} • $date"
+    val date = SimpleDateFormat("dd MMM yyyy • HH:mm", Locale.getDefault()).format(Date(file.lastModified()))
+    return "${file.name}\n$date"
 }

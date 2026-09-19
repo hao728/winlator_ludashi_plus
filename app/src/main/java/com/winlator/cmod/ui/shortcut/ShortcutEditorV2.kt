@@ -134,6 +134,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.roundToInt
 
 private val shortcutComponentRowsV2 = listOf(
@@ -650,8 +653,8 @@ private fun ShortcutGameSavesCard(s: ShortcutEditorStateV2, context: Context) {
     val active = globalEnabled || s.gameSavesEnabled
     val scope = rememberCoroutineScope()
     var roots by remember(s.shortcut.file.path) { mutableStateOf<List<String>>(emptyList()) }
-    var latestName by remember(s.shortcut.file.path) {
-        mutableStateOf(GameSaveManager.getLatestBackup(s.shortcut)?.name)
+    var latestBackup by remember(s.shortcut.file.path) {
+        mutableStateOf(GameSaveManager.getLatestBackup(s.shortcut))
     }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -660,10 +663,10 @@ private fun ShortcutGameSavesCard(s: ShortcutEditorStateV2, context: Context) {
     LaunchedEffect(active, refreshKey) {
         if (active) {
             roots = withContext(Dispatchers.IO) { GameSaveManager.getSaveRoots(s.shortcut) }
-            latestName = GameSaveManager.getLatestBackup(s.shortcut)?.name
+            latestBackup = GameSaveManager.getLatestBackup(s.shortcut)
         } else {
             roots = emptyList()
-            latestName = GameSaveManager.getLatestBackup(s.shortcut)?.name
+            latestBackup = GameSaveManager.getLatestBackup(s.shortcut)
         }
     }
 
@@ -712,7 +715,7 @@ private fun ShortcutGameSavesCard(s: ShortcutEditorStateV2, context: Context) {
                 )
                 Text("Latest backup", style = MaterialTheme.typography.labelLarge)
                 Text(
-                    latestName ?: "No backup yet",
+                    latestBackup?.let(::shortcutBackupLabel) ?: "No backup yet",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -806,7 +809,7 @@ private fun ShortcutGameSavesCard(s: ShortcutEditorStateV2, context: Context) {
                         }
                     },
                     modifier = Modifier.weight(1f),
-                    enabled = !busy && latestName != null
+                    enabled = !busy && latestBackup != null
                 ) {
                     Text("Restore")
                 }
@@ -822,6 +825,11 @@ private fun ShortcutGameSavesCard(s: ShortcutEditorStateV2, context: Context) {
             }
         }
     }
+}
+
+private fun shortcutBackupLabel(file: File): String {
+    val date = SimpleDateFormat("dd MMM yyyy • HH:mm", Locale.getDefault()).format(Date(file.lastModified()))
+    return "${file.name}\n$date"
 }
 
 @Composable

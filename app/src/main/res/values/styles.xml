@@ -144,7 +144,7 @@
         <item name="android:windowIsFloating">false</item>
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:colorBackground">@android:color/transparent</item>
-        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
         <item name="android:windowDisablePreview">true</item>
     </style>
 
