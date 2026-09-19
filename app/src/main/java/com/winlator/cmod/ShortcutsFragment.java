@@ -108,7 +108,7 @@ public class ShortcutsFragment extends Fragment {
     private static String STEAMGRID_API_KEY = "0324c52513634547a7b32d6d323635d0";
     private static final ExecutorService DYNAMIC_SHORTCUT_EXECUTOR = Executors.newSingleThreadExecutor();
     private static final AtomicInteger DYNAMIC_SHORTCUT_SYNC_GENERATION = new AtomicInteger();
-    private static volatile String lastDynamicShortcutSignature = "";
+    private static volatile String lastDynamicShortcutSignature;
 
     private static final class DynamicShortcutEntry {
         final String id;
