@@ -82,12 +82,16 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ShortcutsFragment extends Fragment {
     private static final String TAG = "ShortcutsFragment";
@@ -102,6 +106,40 @@ public class ShortcutsFragment extends Fragment {
     private static final int MENU_GROUP_ORIENTATION_MODE = 9;
     private static final String STEAMGRID_BASE_URL = "https://www.steamgriddb.com/api/v2/";
     private static String STEAMGRID_API_KEY = "0324c52513634547a7b32d6d323635d0";
+    private static final ExecutorService DYNAMIC_SHORTCUT_EXECUTOR = Executors.newSingleThreadExecutor();
+    private static final AtomicInteger DYNAMIC_SHORTCUT_SYNC_GENERATION = new AtomicInteger();
+    private static volatile String lastDynamicShortcutSignature = "";
+
+    private static final class DynamicShortcutEntry {
+        final String id;
+        final String name;
+        final String shortcutPath;
+        final int containerId;
+        final boolean favorite;
+        final long lastRunAt;
+        final String userIconPath;
+        final String coverPath;
+        final String bannerPath;
+        final String autoIconPath;
+        final Bitmap fallbackIcon;
+
+        DynamicShortcutEntry(String id, String name, String shortcutPath, int containerId,
+                             boolean favorite, long lastRunAt, String userIconPath,
+                             String coverPath, String bannerPath, String autoIconPath,
+                             Bitmap fallbackIcon) {
+            this.id = id;
+            this.name = name;
+            this.shortcutPath = shortcutPath;
+            this.containerId = containerId;
+            this.favorite = favorite;
+            this.lastRunAt = lastRunAt;
+            this.userIconPath = userIconPath;
+            this.coverPath = coverPath;
+            this.bannerPath = bannerPath;
+            this.autoIconPath = autoIconPath;
+            this.fallbackIcon = fallbackIcon;
+        }
+    }
 
     private ContainerManager manager;
     private SharedPreferences preferences;
@@ -798,7 +836,7 @@ public class ShortcutsFragment extends Fragment {
         } catch (IOException ignored) {}
     }
 
-    private Bitmap centerCropSquare(Bitmap source) {
+    private static Bitmap centerCropSquare(Bitmap source) {
         if (source == null) return null;
         int size = Math.min(source.getWidth(), source.getHeight());
         int x = Math.max(0, (source.getWidth() - size) / 2);
@@ -865,65 +903,161 @@ public class ShortcutsFragment extends Fragment {
                 shortcut.file.getPath(), Icon.createWithBitmap(bitmap), uuid);
     }
 
-    private void syncDynamicAppShortcuts() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N_MR1 || !isAdded()) return;
+    private ArrayList<DynamicShortcutEntry> snapshotDynamicShortcuts() {
+        ArrayList<DynamicShortcutEntry> snapshot = new ArrayList<>();
+        File winlatorDir = new File(Environment.getExternalStorageDirectory(), "Winlator");
+        File iconDir = new File(winlatorDir, "icons");
+        File coverDir = new File(winlatorDir, "covers");
+        File bannerDir = new File(winlatorDir, "banners");
 
-        ShortcutManager shortcutManager = getSystemService(requireContext(), ShortcutManager.class);
-        if (shortcutManager == null) return;
+        for (Shortcut shortcut : allShortcuts) {
+            if (shortcut == null || shortcut.file == null || shortcut.container == null) continue;
 
-        try {
-            int maxCount = shortcutManager.getMaxShortcutCountPerActivity();
-            if (maxCount <= 0 || allShortcuts.isEmpty()) {
-                shortcutManager.removeAllDynamicShortcuts();
-                return;
-            }
+            String shortcutPath = shortcut.file.getPath();
+            String storedUuid = shortcut.getExtra("uuid");
+            String dynamicId = storedUuid.isEmpty()
+                    ? "game-" + UUID.nameUUIDFromBytes(shortcutPath.getBytes(StandardCharsets.UTF_8))
+                    : storedUuid;
+            String baseName = FileUtils.getBasename(shortcutPath);
 
-            ArrayList<Shortcut> candidates = new ArrayList<>();
-            for (Shortcut shortcut : allShortcuts) {
-                if (shortcut != null && shortcut.file != null && shortcut.container != null) {
-                    shortcut.genUUID();
-                    candidates.add(shortcut);
-                }
-            }
-
-            candidates.sort((first, second) -> {
-                boolean firstFavorite = "1".equals(first.getExtra("favorite", "0"));
-                boolean secondFavorite = "1".equals(second.getExtra("favorite", "0"));
-                if (firstFavorite != secondFavorite) return firstFavorite ? -1 : 1;
-
-                int recent = Long.compare(parseLastRunAt(second), parseLastRunAt(first));
-                if (recent != 0) return recent;
-                return first.name.compareToIgnoreCase(second.name);
-            });
-
-            ArrayList<ShortcutInfo> dynamicShortcuts = new ArrayList<>();
-            int count = Math.min(maxCount, candidates.size());
-            for (int i = 0; i < count; i++) {
-                Shortcut shortcut = candidates.get(i);
-                String uuid = shortcut.getExtra("uuid");
-                if (uuid.isEmpty()) continue;
-
-                Bitmap bitmap = getLauncherShortcutBitmap(shortcut, shortcutManager);
-                if (bitmap == null) continue;
-
-                Intent intent = new Intent(requireContext(), XServerDisplayActivity.class);
-                intent.setAction(Intent.ACTION_VIEW);
-                intent.putExtra("container_id", shortcut.container.id);
-                intent.putExtra("shortcut_path", shortcut.file.getPath());
-
-                dynamicShortcuts.add(new ShortcutInfo.Builder(requireContext(), uuid)
-                        .setShortLabel(shortcut.name)
-                        .setLongLabel(shortcut.name)
-                        .setIcon(Icon.createWithBitmap(bitmap))
-                        .setIntent(intent)
-                        .setRank(dynamicShortcuts.size())
-                        .build());
-            }
-
-            shortcutManager.setDynamicShortcuts(dynamicShortcuts);
-        } catch (Exception e) {
-            Log.w(TAG, "Unable to sync dynamic app shortcuts", e);
+            snapshot.add(new DynamicShortcutEntry(
+                    dynamicId,
+                    shortcut.name,
+                    shortcutPath,
+                    shortcut.container.id,
+                    "1".equals(shortcut.getExtra("favorite", "0")),
+                    parseLastRunAt(shortcut),
+                    new File(iconDir, baseName + ".user.png").getPath(),
+                    new File(coverDir, baseName + ".png").getPath(),
+                    new File(bannerDir, baseName + ".png").getPath(),
+                    new File(iconDir, baseName + ".png").getPath(),
+                    shortcut.icon
+            ));
         }
+        return snapshot;
+    }
+
+    private static String buildDynamicShortcutSignature(List<DynamicShortcutEntry> entries) {
+        StringBuilder signature = new StringBuilder();
+        for (DynamicShortcutEntry entry : entries) {
+            File userIcon = new File(entry.userIconPath);
+            File cover = new File(entry.coverPath);
+            File banner = new File(entry.bannerPath);
+            File autoIcon = new File(entry.autoIconPath);
+            signature.append(entry.id).append('|')
+                    .append(entry.name).append('|')
+                    .append(entry.favorite).append('|')
+                    .append(entry.lastRunAt).append('|')
+                    .append(userIcon.lastModified()).append(':').append(userIcon.length()).append('|')
+                    .append(cover.lastModified()).append(':').append(cover.length()).append('|')
+                    .append(banner.lastModified()).append(':').append(banner.length()).append('|')
+                    .append(autoIcon.lastModified()).append(':').append(autoIcon.length()).append(';');
+        }
+        return signature.toString();
+    }
+
+    private static Bitmap getDynamicShortcutBitmap(DynamicShortcutEntry entry,
+                                                   ShortcutManager shortcutManager,
+                                                   Context context) {
+        Bitmap bitmap = null;
+        boolean artwork = false;
+
+        File userIcon = new File(entry.userIconPath);
+        File cover = new File(entry.coverPath);
+        File banner = new File(entry.bannerPath);
+        File autoIcon = new File(entry.autoIconPath);
+
+        if (userIcon.isFile()) bitmap = BitmapFactory.decodeFile(userIcon.getPath());
+        if (bitmap == null && cover.isFile()) {
+            bitmap = BitmapFactory.decodeFile(cover.getPath());
+            artwork = bitmap != null;
+        }
+        if (bitmap == null && banner.isFile()) {
+            bitmap = BitmapFactory.decodeFile(banner.getPath());
+            artwork = bitmap != null;
+        }
+        if (bitmap == null && autoIcon.isFile()) bitmap = BitmapFactory.decodeFile(autoIcon.getPath());
+        if (bitmap == null) bitmap = entry.fallbackIcon;
+        if (bitmap == null) bitmap = BitmapFactory.decodeResource(context.getResources(), R.drawable.icon_wine);
+        if (bitmap == null) return null;
+
+        if (artwork) bitmap = centerCropSquare(bitmap);
+
+        int maxWidth = Math.max(1, shortcutManager.getIconMaxWidth());
+        int maxHeight = Math.max(1, shortcutManager.getIconMaxHeight());
+        if (bitmap.getWidth() <= maxWidth && bitmap.getHeight() <= maxHeight) return bitmap;
+
+        float scale = Math.min((float) maxWidth / bitmap.getWidth(), (float) maxHeight / bitmap.getHeight());
+        int width = Math.max(1, Math.round(bitmap.getWidth() * scale));
+        int height = Math.max(1, Math.round(bitmap.getHeight() * scale));
+        return Bitmap.createScaledBitmap(bitmap, width, height, true);
+    }
+
+    private void syncDynamicAppShortcuts() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N_MR1) return;
+
+        Context context = getContext();
+        if (context == null) return;
+
+        Context appContext = context.getApplicationContext();
+        ArrayList<DynamicShortcutEntry> snapshot = snapshotDynamicShortcuts();
+        int generation = DYNAMIC_SHORTCUT_SYNC_GENERATION.incrementAndGet();
+
+        DYNAMIC_SHORTCUT_EXECUTOR.execute(() -> {
+            if (generation != DYNAMIC_SHORTCUT_SYNC_GENERATION.get()) return;
+
+            ShortcutManager shortcutManager = appContext.getSystemService(ShortcutManager.class);
+            if (shortcutManager == null) return;
+
+            try {
+                String signature = buildDynamicShortcutSignature(snapshot);
+                if (signature.equals(lastDynamicShortcutSignature)) return;
+
+                int maxCount = shortcutManager.getMaxShortcutCountPerActivity();
+                if (maxCount <= 0 || snapshot.isEmpty()) {
+                    if (generation != DYNAMIC_SHORTCUT_SYNC_GENERATION.get()) return;
+                    shortcutManager.removeAllDynamicShortcuts();
+                    lastDynamicShortcutSignature = signature;
+                    return;
+                }
+
+                snapshot.sort((first, second) -> {
+                    if (first.favorite != second.favorite) return first.favorite ? -1 : 1;
+                    int recent = Long.compare(second.lastRunAt, first.lastRunAt);
+                    if (recent != 0) return recent;
+                    return first.name.compareToIgnoreCase(second.name);
+                });
+
+                ArrayList<ShortcutInfo> dynamicShortcuts = new ArrayList<>();
+                int count = Math.min(maxCount, snapshot.size());
+                for (int i = 0; i < count; i++) {
+                    if (generation != DYNAMIC_SHORTCUT_SYNC_GENERATION.get()) return;
+
+                    DynamicShortcutEntry entry = snapshot.get(i);
+                    Bitmap bitmap = getDynamicShortcutBitmap(entry, shortcutManager, appContext);
+                    if (bitmap == null) continue;
+
+                    Intent intent = new Intent(appContext, XServerDisplayActivity.class);
+                    intent.setAction(Intent.ACTION_VIEW);
+                    intent.putExtra("container_id", entry.containerId);
+                    intent.putExtra("shortcut_path", entry.shortcutPath);
+
+                    dynamicShortcuts.add(new ShortcutInfo.Builder(appContext, entry.id)
+                            .setShortLabel(entry.name)
+                            .setLongLabel(entry.name)
+                            .setIcon(Icon.createWithBitmap(bitmap))
+                            .setIntent(intent)
+                            .setRank(dynamicShortcuts.size())
+                            .build());
+                }
+
+                if (generation != DYNAMIC_SHORTCUT_SYNC_GENERATION.get()) return;
+                shortcutManager.setDynamicShortcuts(dynamicShortcuts);
+                lastDynamicShortcutSignature = signature;
+            } catch (Exception e) {
+                Log.w(TAG, "Unable to sync dynamic app shortcuts", e);
+            }
+        });
     }
 
     private ShortcutInfo buildScreenShortCut(String shortLabel, String longLabel, int containerId, String shortcutPath, Icon icon, String uuid) {
