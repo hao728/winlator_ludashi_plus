@@ -139,6 +139,15 @@
         <item name="android:windowBackground">@android:color/transparent</item>
     </style>
 
+    <style name="GameSavesDialog" parent="ContentDialog">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:colorBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:windowDisablePreview">true</item>
+    </style>
+
     <!-- EditText Styles -->
     <style name="EditText">
         <item name="android:layout_width">match_parent</item>

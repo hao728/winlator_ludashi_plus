@@ -4,6 +4,7 @@ import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.view.ViewGroup
 import android.view.WindowManager
+import com.winlator.cmod.R
 import androidx.activity.ComponentDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,15 +53,17 @@ import java.util.Locale
 object GameSavesComposeDialog {
     @JvmStatic
     fun show(fragment: Fragment, shortcut: Shortcut) {
-        val dialog = ComponentDialog(fragment.requireContext())
+        val dialog = ComponentDialog(fragment.requireContext(), R.style.GameSavesDialog)
         dialog.show()
         dialog.window?.apply {
             setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            decorView.setBackgroundColor(Color.TRANSPARENT)
             addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            attributes = attributes.apply { dimAmount = 0.62f }
+            attributes = attributes.apply { dimAmount = 0.38f }
         }
         dialog.setContentView(ComposeView(fragment.requireContext()).apply {
+            setBackgroundColor(Color.TRANSPARENT)
             setContent {
                 WinZTheme {
                     GameSavesPanel(shortcut = shortcut, onClose = dialog::dismiss)
