@@ -1519,6 +1519,13 @@ public class WinlatorHUD extends View {
     }
 
     public void forceReset() {
+        showMask = SHOW_DEFAULT;
+        hudAlpha = 1.0f;
+        vertical = false;
+        setScaleX(1.0f);
+        setScaleY(1.0f);
+        setX(16f);
+        setY(16f);
         uiHandler.post(() -> {
             uiHandler.removeCallbacks(redrawRunnable);
             redrawScheduled = false;
@@ -1529,9 +1536,6 @@ public class WinlatorHUD extends View {
             touchDownMs = 0;
             rendererActive = true;
             userEnabled = true;
-            showMask = SHOW_DEFAULT;
-            hudAlpha = 1.0f;
-            vertical = false;
             prefs.edit()
                     .putInt(KEY_SHOW, SHOW_DEFAULT)
                     .putInt(KEY_ALPHA, 100)
@@ -1542,10 +1546,6 @@ public class WinlatorHUD extends View {
                     .putBoolean(KEY_VIS, true)
                     .putBoolean(KEY_DUAL_CELL, false)
                     .apply();
-            setScaleX(1.0f);
-            setScaleY(1.0f);
-            setX(16f);
-            setY(16f);
             if (!mesaRendererActive) refreshBackendRenderer(true);
             startStatsThread();
             setVisibility(VISIBLE);
