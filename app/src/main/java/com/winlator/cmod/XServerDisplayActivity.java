@@ -2125,11 +2125,11 @@ public class XServerDisplayActivity extends AppCompatActivity {
             syncModernHudSidebarUI(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbGraph, cbRenderer, sbScale, sbAlpha);
             bindModernHudCheckboxes(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbRenderer);
         }
-        if (sbScale != null) sbScale.setOnValueChangeListener((sb, v) -> {
-            if (modernHud != null) modernHud.setHudScale(1f + (v - 50f) / 50f);
+        if (sbScale != null) sbScale.setOnValueChangeListener((sb, v, isFinal) -> {
+            if (modernHud != null) modernHud.setHudScale(1f + (v - 50f) / 50f, isFinal);
         });
-        if (sbAlpha != null) sbAlpha.setOnValueChangeListener((sb, v) -> {
-            if (modernHud != null) modernHud.setHudAlpha(v / 100f);
+        if (sbAlpha != null) sbAlpha.setOnValueChangeListener((sb, v, isFinal) -> {
+            if (modernHud != null) modernHud.setHudAlpha(v / 100f, isFinal);
         });
         if (btResetHud != null) btResetHud.setOnClickListener(v -> {
             if (swHudMaster != null && swHudMaster.isChecked() && spHudStyle != null && spHudStyle.getSelectedItemPosition() == 1) {
@@ -2397,7 +2397,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         if (sbSharpness != null) {
             sbSharpness.setValue(initSharp);
             setRendererSharpness(initSharp / 100f);
-            sbSharpness.setOnValueChangeListener((sb, v) -> setRendererSharpness(v / 100f));
+            sbSharpness.setOnValueChangeListener((sb, v, isFinal) -> setRendererSharpness(v / 100f));
         }
 
         Runnable updateSharpnessVis = () -> {
@@ -2687,9 +2687,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
         if (sbControlsOpacity != null) {
             sbControlsOpacity.setValue(preferences.getFloat("overlay_opacity", InputControlsView.DEFAULT_OVERLAY_OPACITY) * 100f);
-            sbControlsOpacity.setOnValueChangeListener((sb, v) -> {
+            sbControlsOpacity.setOnValueChangeListener((sb, v, isFinal) -> {
                 float opacity = v / 100f;
-                preferences.edit().putFloat("overlay_opacity", opacity).apply();
+                if (isFinal) preferences.edit().putFloat("overlay_opacity", opacity).apply();
                 inputControlsView.setOverlayOpacity(opacity);
                 inputControlsView.invalidate();
             });

@@ -1497,16 +1497,16 @@ public class WinlatorHUD extends View {
 
     public void setDataSource(Object dataSource) {}
 
-    public void setHudScale(float scale) {
+    public void setHudScale(float scale, boolean isFinalInput) {
         scale = Math.max(0.5f, scale);
         setScaleX(scale);
         setScaleY(scale);
-        prefs.edit().putFloat(KEY_SCALE, scale).apply();
+        if (isFinalInput) prefs.edit().putFloat(KEY_SCALE, scale).apply();
     }
 
-    public void setHudAlpha(float alpha) {
+    public void setHudAlpha(float alpha, boolean isFinalInput) {
         hudAlpha = Math.max(0f, Math.min(1f, alpha));
-        prefs.edit().putInt(KEY_ALPHA, (int) (hudAlpha * 100)).apply();
+        if (isFinalInput) prefs.edit().putInt(KEY_ALPHA, (int) (hudAlpha * 100)).apply();
         invalidate();
     }
 
