@@ -287,6 +287,7 @@
     <string name="enable_experimental_wow64_mode">Enable experimental WoW64 mode</string>
     <string name="logs">Logs</string>
     <string name="enable_wine_debug">Enable Wine debug</string>
+    <string name="enable_winlator_logs">Enable Winlator logs</string>
     <string name="enable_box64_logs">Enable Box64 logs</string>
     <string name="export">Export</string>
     <string name="logs_exported_to">Logs exported to</string>
@@ -818,4 +819,3 @@ E.g. <b>META</b> for <i>META key</i>, \n
         <br /><br /><b>When to change:</b> Raise it if you get a hitch shortly after a level load, which usually means the cache shrank and then had to grow straight back. Lower it to hand memory back sooner. It does nothing at all unless DYNAMICL1CACHE is on.
         ]]></string>
 </resources>
-

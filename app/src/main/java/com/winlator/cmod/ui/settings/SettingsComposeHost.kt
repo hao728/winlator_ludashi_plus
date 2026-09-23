@@ -112,6 +112,7 @@ data class SettingsModel(
     val gameSavesAllShortcuts: Boolean,
     val wineDebug: Boolean,
     val wineDebugChannels: String,
+    val winlatorLogs: Boolean,
     val box64Logs: Boolean,
     val customApiKeyEnabled: Boolean,
     val customApiKey: String,
@@ -293,6 +294,8 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
                             onSave = callbacks::onWineDebugChannelsChanged
                         )
                     }
+                    GroupDivider()
+                    ToggleRow(stringResource(R.string.enable_winlator_logs), model.winlatorLogs) { callbacks.onBooleanChanged("enable_winlator_logs", it) }
                     GroupDivider()
                     ToggleRow(stringResource(R.string.enable_box64_logs), model.box64Logs) { callbacks.onBooleanChanged("enable_box64_logs", it) }
                 }
@@ -694,4 +697,3 @@ private fun EditableInlineValue(label: String, initial: String, onSave: (String)
         if (editable) Button(onClick = { onSave(value) }, modifier = Modifier.align(Alignment.End)) { Text("Save") }
     }
 }
-
