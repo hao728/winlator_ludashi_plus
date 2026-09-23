@@ -61,6 +61,7 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
     private volatile boolean inPipMode = false;
     private String driverLibraryName = null;
     private String nativeLibDir = null;
+    private boolean validationEnabled = false;
     private Drawable rootCursorDrawable;
     private Cursor lastCursor = null;
     private static volatile boolean gpuImageChecked = false;
@@ -117,7 +118,8 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
 
     private native long nativeInit(Surface surface,
                                    int screenWidth, int screenHeight,
-                                   String driverPath, String libraryName, String nativeLibDir);
+                                   String driverPath, String libraryName, String nativeLibDir,
+                                   boolean validationEnabled);
     private native void nativeResize(long handle, int width, int height);
     private native void nativeDestroy(long handle);
     private native void nativeDetachSurface(long handle);
@@ -219,7 +221,7 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
                 nativeHandle = nativeInit(
                     surface,
                     xServer.screenInfo.width, xServer.screenInfo.height,
-                    driverPath, driverLibraryName, nativeLibDir);
+                    driverPath, driverLibraryName, nativeLibDir, validationEnabled);
 
                 if (nativeHandle != 0) {
                     nativeSetPresentMode(nativeHandle, pendingPresentMode);
@@ -626,6 +628,11 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
     public void setDriverInfo(String driverPath, String libraryName, String nativeLibDir) {
         this.driverPath = driverPath;
         this.driverLibraryName = libraryName;
+        this.nativeLibDir = nativeLibDir;
+    }
+
+    public void setValidationEnabled(boolean enabled, String nativeLibDir) {
+        this.validationEnabled = enabled;
         this.nativeLibDir = nativeLibDir;
     }
 
