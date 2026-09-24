@@ -287,6 +287,7 @@ void DisplayX::networkThreadLoop() {
                                 swapchain->images[j] = std::move(drawable);
                             }
                              
+                            if (window->parent) window->parent->surface = window;
                             clientSwapchains[id] = std::move(swapchain);
                             break;
                         }    
@@ -314,6 +315,7 @@ void DisplayX::networkThreadLoop() {
                             
                             auto lock = presentLock.lock();   
                             
+                            swapchain->window->externalContent = drawable;
                             auto presentRequest = std::make_unique<PresentRequest>();
                             presentRequest->drawable = drawable;
                             presentRequest->sync_fence = fence;
@@ -336,7 +338,7 @@ void DisplayX::networkThreadLoop() {
                             if (!swapchain)
                                 continue;
                             
-                            swapchain->window->currentDirectContent = nullptr;
+                            swapchain->window->externalContent = nullptr;
                             clientSwapchains.erase(id);
                             break;
                         }
@@ -677,13 +679,14 @@ void DisplayX::queueEvent(std::function<void()> func) {
 void DisplayX::requestWindowUpdate(Window *window) {
     auto lock = presentLock.lock();
     
+    if (!window || window->isHidden()) return;
     auto drawable = window->drawable.get();
     
     if (effectComposer->isSuitableForColorSwap(drawable))
         effectComposer->apply(drawable);
         
     auto presentRequest = std::make_unique<PresentRequest>();
-    presentRequest->drawable = window->hasDirectContents() ? window->currentDirectContent : drawable;
+    presentRequest->drawable = window->hasExternalContents() ? window->externalContent : drawable;
     presentRequest->sync_fence = -1;
     presentRequest->presentId = -1;
     presentRequest->clientFd = -1;
