@@ -1,0 +1,201 @@
+name: 一键应用补丁
+
+on:
+  # 手动触发
+  workflow_dispatch:
+    inputs:
+      patch_url:
+        description: '补丁文件 URL（可选，不上传则使用仓库内 patches/ 目录最新文件）'
+        required: false
+        default: ''
+  # 监听 patches/ 目录的 push（上传补丁后自动触发）
+  push:
+    paths:
+      - 'patches/**'
+      - '.github/workflows/apply-patch.yml'
+
+jobs:
+  apply-patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: 配置 Git 机器人
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: 恢复被误删的 submodule
+        run: |
+          git submodule update --init --recursive
+          # 确保 submodule 没有被标记为删除
+          git status --short | grep "^D" | awk '{print $2}' | while read file; do
+            if git ls-files --error-unmatch "$file" >/dev/null 2>&1; then
+              git checkout -- "$file" 2>/dev/null || true
+            fi
+          done
+          echo "submodule 已恢复"
+
+      - name: 下载补丁（如果提供了 URL）
+        if: ${{ github.event.inputs.patch_url != '' }}
+        run: |
+          mkdir -p /tmp/patch-input
+          wget -q -O /tmp/patch-input/patch.zip "${{ github.event.inputs.patch_url }}"
+          echo "已下载补丁"
+
+      - name: 定位补丁文件
+        id: locate
+        run: |
+          # 优先使用下载的补丁
+          if [ -f "/tmp/patch-input/patch.zip" ]; then
+            echo "file=/tmp/patch-input/patch.zip" >> $GITHUB_OUTPUT
+            echo "type=zip" >> $GITHUB_OUTPUT
+            echo "使用下载的补丁"
+          # 仓库内最新 zip
+          elif ls patches/*.zip 1>/dev/null 2>&1; then
+            echo "file=$(ls -t patches/*.zip | head -1)" >> $GITHUB_OUTPUT
+            echo "type=zip" >> $GITHUB_OUTPUT
+            echo "使用仓库内 zip 补丁"
+          # 仓库内最新 patch
+          elif ls patches/*.patch 1>/dev/null 2>&1; then
+            echo "file=$(ls -t patches/*.patch | head -1)" >> $GITHUB_OUTPUT
+            echo "type=patch" >> $GITHUB_OUTPUT
+            echo "使用仓库内 patch 补丁"
+          else
+            echo "未找到补丁文件，退出"
+            exit 0
+          fi
+
+      - name: 应用 ZIP 补丁包
+        if: steps.locate.outputs.type == 'zip'
+        run: |
+          PATCH_FILE="${{ steps.locate.outputs.file }}"
+          EXTRACT_DIR="/tmp/patch-extract"
+          mkdir -p "$EXTRACT_DIR"
+          unzip -q -o "$PATCH_FILE" -d "$EXTRACT_DIR"
+
+          # 自动查找目录（兼容有/无顶层目录的补丁包）
+          JAVA_MODIFIED_DIR=$(find "$EXTRACT_DIR" -type d -name "java-modified" | head -1)
+          UTIL_NEW_DIR=$(find "$EXTRACT_DIR" -type d -name "util-new" | head -1)
+          BUILD_SCRIPTS_DIR=$(find "$EXTRACT_DIR" -type d -name "build-scripts" | head -1)
+          WORKFLOWS_DIR=$(find "$EXTRACT_DIR" -type d -name "workflows" | head -1)
+          DOCS_DIR=$(find "$EXTRACT_DIR" -type d -name "docs" | head -1)
+          PATCHES_DIR=$(find "$EXTRACT_DIR" -type d -name "patches" | head -1)
+
+          echo "找到目录: java-modified=$JAVA_MODIFIED_DIR, util-new=$UTIL_NEW_DIR, build-scripts=$BUILD_SCRIPTS_DIR, workflows=$WORKFLOWS_DIR"
+
+          # 1. 应用修改的 Java 文件（自动匹配源码路径）
+          if [ -n "$JAVA_MODIFIED_DIR" ] && [ -d "$JAVA_MODIFIED_DIR" ]; then
+            find "$JAVA_MODIFIED_DIR" -name "*.java" -type f | while read file; do
+              filename=$(basename "$file")
+              target=$(find app/src/main/java -name "$filename" -type f | head -1)
+              if [ -n "$target" ]; then
+                cp "$file" "$target"
+                echo "更新: $target"
+              else
+                echo "警告: 未找到目标文件 $filename，作为新文件放入 util/"
+                mkdir -p app/src/main/java/com/winlator/cmod/util
+                cp "$file" "app/src/main/java/com/winlator/cmod/util/$filename"
+              fi
+            done
+          fi
+
+          # 2. 应用新增的 Java 文件（放入 util 目录）
+          if [ -n "$UTIL_NEW_DIR" ] && [ -d "$UTIL_NEW_DIR" ]; then
+            mkdir -p app/src/main/java/com/winlator/cmod/util
+            find "$UTIL_NEW_DIR" -name "*.java" -type f | while read file; do
+              filename=$(basename "$file")
+              cp "$file" "app/src/main/java/com/winlator/cmod/util/$filename"
+              echo "新增: app/src/main/java/com/winlator/cmod/util/$filename"
+            done
+          fi
+
+          # 3. 应用构建脚本修改（自动匹配路径）
+          if [ -n "$BUILD_SCRIPTS_DIR" ] && [ -d "$BUILD_SCRIPTS_DIR" ]; then
+            find "$BUILD_SCRIPTS_DIR" -type f | while read file; do
+              # 计算相对路径
+              relpath="${file#$BUILD_SCRIPTS_DIR/}"
+              target="$relpath"
+              mkdir -p "$(dirname "$target")"
+              cp "$file" "$target"
+              echo "更新构建脚本: $target"
+            done
+          fi
+
+          # 4. 应用 GitHub Actions 工作流文件
+          if [ -n "$WORKFLOWS_DIR" ] && [ -d "$WORKFLOWS_DIR" ]; then
+            mkdir -p .github/workflows
+            find "$WORKFLOWS_DIR" -name "*.yml" -type f | while read file; do
+              filename=$(basename "$file")
+              cp "$file" ".github/workflows/$filename"
+              echo "更新工作流: .github/workflows/$filename"
+            done
+          fi
+
+          # 5. 应用 .patch 文件（如果有）
+          if [ -n "$DOCS_DIR" ] && [ -d "$DOCS_DIR" ]; then
+            find "$DOCS_DIR" -name "*.patch" -type f | while read patchfile; do
+              echo "应用 patch: $(basename $patchfile)"
+              git apply --verbose "$patchfile" 2>&1 | tail -3 || echo "patch 跳过: $(basename $patchfile)"
+            done
+          fi
+
+          # 4. 直接复制 patches/ 目录下的 C 层 patch（如果有）
+          if [ -n "$PATCHES_DIR" ] && [ -d "$PATCHES_DIR" ]; then
+            mkdir -p patches/wine
+            cp -r "$PATCHES_DIR/"* patches/wine/ 2>/dev/null || true
+            echo "已复制 C 层 patch"
+          fi
+
+          rm -rf "$EXTRACT_DIR"
+          echo "ZIP 补丁应用完成"
+
+      - name: 应用 .patch 文件
+        if: steps.locate.outputs.type == 'patch'
+        run: |
+          git apply --verbose "${{ steps.locate.outputs.file }}" 2>&1 | tail -5
+
+      - name: 自动清理多余文件
+        run: |
+          # 1. 删除已应用的补丁源文件（zip/patch）
+          find patches -maxdepth 1 -name "*.zip" -delete 2>/dev/null
+          find patches -maxdepth 1 -name "*.patch" -delete 2>/dev/null
+
+          # 2. 删除根目录临时补丁文件
+          rm -f *.zip *.patch 2>/dev/null
+
+          # 3. 删除空目录
+          find . -type d -empty -not -path "./.git/*" -delete 2>/dev/null || true
+
+          echo "多余文件已清理"
+
+      - name: 验证修改
+        run: |
+          echo "=== 修改的文件 ==="
+          git diff --name-only
+          echo ""
+          echo "=== 新增的文件 ==="
+          git ls-files --others --exclude-standard
+          echo ""
+          echo "=== Git 状态 ==="
+          git status --short
+
+      - name: 机器人自动提交
+        if: steps.locate.outputs.type != ''
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -m "🤖 自动应用补丁 - $(date +'%Y-%m-%d %H:%M')"
+            git push
+            echo "✅ 补丁已应用并推送"
+          else
+            echo "无修改需要提交"
+          fi
