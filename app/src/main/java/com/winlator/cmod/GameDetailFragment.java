@@ -1,6 +1,7 @@
 package com.winlator.cmod;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
@@ -9,7 +10,11 @@ import android.os.Environment;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.widget.FrameLayout;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -30,6 +35,13 @@ import com.winlator.cmod.ui.shortcut.ShortcutSettingsComposeDialog;
 import java.io.File;
 
 public class GameDetailFragment extends Fragment {
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setHasOptionsMenu(true);
+    }
+
     private final String shortcutPath;
     private Shortcut shortcut;
 
@@ -185,4 +197,67 @@ public class GameDetailFragment extends Fragment {
         }
         super.onPause();
     }
+
+    @Override
+    public void onCreateOptionsMenu(@NonNull Menu menu, @NonNull MenuInflater inflater) {
+        super.onCreateOptionsMenu(menu, inflater);
+        menu.add(0, 3001, 0, "导出游戏数据包");
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(@NonNull MenuItem item) {
+        if (item.getItemId() == 3001) {
+            showExportDialog();
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
+    }
+
+    private void showExportDialog() {
+        final Context context = getContext();
+        if (context == null) return;
+
+        String[] options = {"仅配置（小，推荐分享）", "包含游戏本体（大，完整移植）"};
+        new androidx.appcompat.app.AlertDialog.Builder(context)
+                .setTitle("导出游戏数据包")
+                .setItems(options, (dialog, which) -> {
+                    boolean includeGameFiles = (which == 1);
+                    doExport(includeGameFiles, true);
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void doExport(boolean includeGameFiles, boolean includeRegistry) {
+        final Context context = getContext();
+        if (context == null || shortcut == null) return;
+
+        Toast.makeText(context, "开始导出...", Toast.LENGTH_SHORT).show();
+
+        com.winlator.cmod.util.GameRestorePackageManager.exportPackageAsync(context, shortcut,
+                includeGameFiles, includeRegistry, "", "",
+                new com.winlator.cmod.util.GameRestorePackageManager.ExportCallback() {
+                    @Override
+                    public void onProgress(int percent, String message) {}
+
+                    @Override
+                    public void onComplete(String packagePath) {
+                        if (getActivity() != null) {
+                            getActivity().runOnUiThread(() ->
+                                Toast.makeText(context, "导出完成: " + packagePath, Toast.LENGTH_LONG).show()
+                            );
+                        }
+                    }
+
+                    @Override
+                    public void onError(String error) {
+                        if (getActivity() != null) {
+                            getActivity().runOnUiThread(() ->
+                                Toast.makeText(context, "导出失败: " + error, Toast.LENGTH_LONG).show()
+                            );
+                        }
+                    }
+                });
+    }
+
 }
