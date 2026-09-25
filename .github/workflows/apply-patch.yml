@@ -84,13 +84,14 @@ jobs:
 
           # 自动查找目录（兼容有/无顶层目录的补丁包）
           JAVA_MODIFIED_DIR=$(find "$EXTRACT_DIR" -type d -name "java-modified" | head -1)
+          KT_MODIFIED_DIR=$(find "$EXTRACT_DIR" -type d -name "kt-modified" | head -1)
           UTIL_NEW_DIR=$(find "$EXTRACT_DIR" -type d -name "util-new" | head -1)
           BUILD_SCRIPTS_DIR=$(find "$EXTRACT_DIR" -type d -name "build-scripts" | head -1)
           WORKFLOWS_DIR=$(find "$EXTRACT_DIR" -type d -name "workflows" | head -1)
           DOCS_DIR=$(find "$EXTRACT_DIR" -type d -name "docs" | head -1)
           PATCHES_DIR=$(find "$EXTRACT_DIR" -type d -name "patches" | head -1)
 
-          echo "找到目录: java-modified=$JAVA_MODIFIED_DIR, util-new=$UTIL_NEW_DIR, build-scripts=$BUILD_SCRIPTS_DIR, workflows=$WORKFLOWS_DIR"
+          echo "找到目录: java-modified=$JAVA_MODIFIED_DIR, kt-modified=$KT_MODIFIED_DIR, util-new=$UTIL_NEW_DIR, build-scripts=$BUILD_SCRIPTS_DIR, workflows=$WORKFLOWS_DIR"
 
           # 1. 应用修改的 Java 文件（自动匹配源码路径）
           if [ -n "$JAVA_MODIFIED_DIR" ] && [ -d "$JAVA_MODIFIED_DIR" ]; then
@@ -106,6 +107,20 @@ jobs:
                 cp "$file" "app/src/main/java/com/winlator/cmod/util/$filename"
               fi
             done
+          fi
+
+          # 1.5 应用修改的 Kotlin 文件（自动匹配源码路径）
+          if [ -n "$KT_MODIFIED_DIR" ] && [ -d "$KT_MODIFIED_DIR" ]; then
+              find "$KT_MODIFIED_DIR" -name "*.kt" -type f | while read file; do
+                  filename=$(basename "$file")
+                  target=$(find app/src/main/java -name "$filename" -type f | head -1)
+                  if [ -n "$target" ]; then
+                      cp "$file" "$target"
+                      echo "更新Kotlin: $target"
+                  else
+                      echo "警告: 未找到Kotlin目标文件 $filename"
+                  fi
+              done
           fi
 
           # 2. 应用新增的 Java 文件（放入 util 目录）
