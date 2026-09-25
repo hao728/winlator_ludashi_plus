@@ -349,6 +349,10 @@ private fun AddGameSheet(cb: LibraryCallbacks, close: () -> Unit) {
                 close()
                 cb.onAddLocal()
             }
+            AddGameRow(Icons.Outlined.Backup, "导入游戏数据包", "导入.grp.zip，一键恢复游戏+配置") {
+                close()
+                cb.onImportPackage()
+            }
             Text("From store", Modifier.padding(top = 20.dp, bottom = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             AddGameRow(Icons.Outlined.Storefront, "Steam", "Open Steam") { close(); cb.onOpenStore("steam") }
             AddGameRow(Icons.Outlined.Storefront, "GOG", "Open GOG") { close(); cb.onOpenStore("gog") }

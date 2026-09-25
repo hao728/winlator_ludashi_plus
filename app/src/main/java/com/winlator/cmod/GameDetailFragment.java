@@ -202,6 +202,8 @@ public class GameDetailFragment extends Fragment {
     public void onCreateOptionsMenu(@NonNull Menu menu, @NonNull MenuInflater inflater) {
         super.onCreateOptionsMenu(menu, inflater);
         menu.add(0, 3001, 0, "导出游戏数据包");
+        menu.add(0, 3002, 1, "导出容器配置");
+        menu.add(0, 3003, 2, "导入容器配置");
     }
 
     @Override
@@ -209,8 +211,46 @@ public class GameDetailFragment extends Fragment {
         if (item.getItemId() == 3001) {
             showExportDialog();
             return true;
+        } else if (item.getItemId() == 3002) {
+            exportContainerConfig();
+            return true;
+        } else if (item.getItemId() == 3003) {
+            importContainerConfig();
+            return true;
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    private void exportContainerConfig() {
+        final Context context = getContext();
+        if (context == null || shortcut == null || shortcut.container == null) return;
+
+        try {
+            File configFile = shortcut.container.getConfigFile();
+            File exportDir = new File("/storage/emulated/0/Download/Winlator/Configs/");
+            if (!exportDir.exists()) exportDir.mkdirs();
+            String timeStamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(new java.util.Date());
+            File destFile = new File(exportDir, "container_config_" + shortcut.container.id + "_" + timeStamp + ".json");
+            com.winlator.cmod.core.FileUtils.copy(configFile, destFile);
+            Toast.makeText(context, "容器配置已导出: " + destFile.getPath(), Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Toast.makeText(context, "导出失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void importContainerConfig() {
+        final Context context = getContext();
+        if (context == null) return;
+
+        android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_GET_CONTENT);
+        intent.setType("application/json");
+        intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+        try {
+            startActivityForResult(android.content.Intent.createChooser(intent, "选择容器配置文件"), 9002);
+            Toast.makeText(context, "选择后将覆盖当前容器配置", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Toast.makeText(context, "无法打开文件选择器", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void showExportDialog() {
@@ -226,6 +266,30 @@ public class GameDetailFragment extends Fragment {
                 })
                 .setNegativeButton("取消", null)
                 .show();
+    }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == 9002 && resultCode == android.app.Activity.RESULT_OK && data != null) {
+            android.net.Uri uri = data.getData();
+            if (uri != null && shortcut != null && shortcut.container != null) {
+                try {
+                    java.io.File tempFile = new java.io.File(getContext().getCacheDir(), "import_config.json");
+                    try (java.io.InputStream is = getContext().getContentResolver().openInputStream(uri);
+                         java.io.FileOutputStream os = new java.io.FileOutputStream(tempFile)) {
+                        byte[] buffer = new byte[8192];
+                        int len;
+                        while ((len = is.read(buffer)) > 0) os.write(buffer, 0, len);
+                    }
+                    com.winlator.cmod.core.FileUtils.copy(tempFile, shortcut.container.getConfigFile());
+                    tempFile.delete();
+                    Toast.makeText(getContext(), "容器配置已导入，重启容器生效", Toast.LENGTH_LONG).show();
+                } catch (Exception e) {
+                    Toast.makeText(getContext(), "导入失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                }
+            }
+        }
     }
 
     private void doExport(boolean includeGameFiles, boolean includeRegistry) {

@@ -152,19 +152,21 @@ public class GameRestorePackageManager {
                 FileUtils.copy(shortcut.iconFile, new File(shortcutDir, "icon" + getFileExtension(shortcut.iconFile.getName())));
             }
 
-            // 5. 导出游戏本体文件（可选）
+            // 5. 导出游戏本体文件（可选）：打包exe所在的整个目录
             if (includeGameFiles) {
-                callback.onProgress(55, "导出游戏文件（可能需要较长时间）...");
+                callback.onProgress(55, "导出游戏文件（打包整个游戏目录，可能需要较长时间）...");
                 String exePath = shortcut.getExecutable();
                 if (exePath != null && !exePath.isEmpty()) {
-                    // 游戏文件在容器内的路径，需要映射到实际文件系统路径
                     File gameExe = mapWinePathToReal(container, exePath);
                     if (gameExe != null && gameExe.exists()) {
                         File gameParentDir = gameExe.getParentFile();
                         if (gameParentDir != null && gameParentDir.exists()) {
-                            // 复制整个游戏目录
+                            // 打包整个游戏目录（exe所在的文件夹）
                             copyDirectory(gameParentDir, new File(gamefilesDir, gameParentDir.getName()), callback, 55, 80);
+                            callback.onProgress(80, "游戏目录已打包: " + gameParentDir.getName());
                         }
+                    } else {
+                        callback.onProgress(80, "提示：未找到游戏文件，仅导出配置");
                     }
                 }
             }

@@ -1100,10 +1100,6 @@ public class FileManagerFragment extends Fragment {
                 performContainerAction(file, container -> runFileDirectly(file, container));
                 return true;
             });
-            popup.getMenu().add("导入游戏数据包").setOnMenuItemClickListener(item -> {
-                showImportPackageDialog();
-                return true;
-            });
             popup.getMenu().add("Add this game").setOnMenuItemClickListener(item -> {
                 performContainerAction(file, container -> createShortcutDirectly(file, container));
                 return true;
@@ -1308,77 +1304,7 @@ public class FileManagerFragment extends Fragment {
         return String.format(Locale.getDefault(), "%.1f %sB", (double) size / (1L << (z * 10)), " KMGTPE".charAt(z));
     }
 
-    private void showImportPackageDialog() {
-        final android.content.Context context = getContext();
-        if (context == null) return;
 
-        android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_GET_CONTENT);
-        intent.setType("application/zip");
-        intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
-        try {
-            startActivityForResult(android.content.Intent.createChooser(intent, "选择游戏数据包"), 9001);
-        } catch (Exception e) {
-            android.widget.Toast.makeText(context, "无法打开文件选择器", android.widget.Toast.LENGTH_SHORT).show();
-        }
-    }
 
-    @Override
-    public void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == 9001 && resultCode == android.app.Activity.RESULT_OK && data != null) {
-            android.net.Uri uri = data.getData();
-            if (uri != null) {
-                importPackageFromUri(uri);
-            }
-        }
-    }
-
-    private void importPackageFromUri(android.net.Uri uri) {
-        final android.content.Context context = getContext();
-        if (context == null) return;
-
-        try {
-            java.io.File tempFile = new java.io.File(context.getCacheDir(), "import_" + System.currentTimeMillis() + ".grp.zip");
-            try (java.io.InputStream is = context.getContentResolver().openInputStream(uri);
-                 java.io.FileOutputStream os = new java.io.FileOutputStream(tempFile)) {
-                byte[] buffer = new byte[8192];
-                int len;
-                while ((len = is.read(buffer)) > 0) {
-                    os.write(buffer, 0, len);
-                }
-            }
-
-            android.widget.Toast.makeText(context, "开始导入...", android.widget.Toast.LENGTH_SHORT).show();
-
-            com.winlator.cmod.util.GameRestorePackageManager.importPackageAsync(context, tempFile,
-                    new com.winlator.cmod.util.GameRestorePackageManager.ImportCallback() {
-                        @Override
-                        public void onProgress(int percent, String message) {}
-
-                        @Override
-                        public void onComplete(int containerId, String shortcutName) {
-                            if (getActivity() != null) {
-                                getActivity().runOnUiThread(() ->
-                                    android.widget.Toast.makeText(context, "导入完成！新容器ID: " + containerId, android.widget.Toast.LENGTH_LONG).show()
-                                );
-                            }
-                            tempFile.delete();
-                        }
-
-                        @Override
-                        public void onError(String error) {
-                            if (getActivity() != null) {
-                                getActivity().runOnUiThread(() ->
-                                    android.widget.Toast.makeText(context, "导入失败: " + error, android.widget.Toast.LENGTH_LONG).show()
-                                );
-                            }
-                            tempFile.delete();
-                        }
-                    });
-
-        } catch (Exception e) {
-            android.widget.Toast.makeText(context, "导入失败: " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
-        }
-    }
 
 }
