@@ -1124,7 +1124,6 @@ public class ShortcutsFragment extends Fragment {
     }
 
     @Override
-    @Override
     public void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == 9001 && resultCode == android.app.Activity.RESULT_OK && data != null) {
