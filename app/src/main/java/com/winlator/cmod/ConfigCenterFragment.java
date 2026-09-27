@@ -741,10 +741,10 @@ public class ConfigCenterFragment extends Fragment {
                     }
 
                     @Override
-                    public void onWarning(String message) {
+                    public void onWarning(String warning) {
                         if (getActivity() != null) {
                             getActivity().runOnUiThread(() ->
-                                Toast.makeText(ctx, "警告: " + message, Toast.LENGTH_LONG).show());
+                                    Toast.makeText(ctx, "警告: " + warning, Toast.LENGTH_SHORT).show());
                         }
                     }
                 });
