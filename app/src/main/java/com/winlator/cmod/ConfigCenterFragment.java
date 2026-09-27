@@ -114,7 +114,7 @@ public class ConfigCenterFragment extends Fragment {
         root.setPadding(pad, dp(8), pad, pad);
 
         // 分类 Tab
-        TabLayout tabLayout = new TabLayout(requireContext(), null, com.google.android.material.R.style.Widget_Material3_TabLayout);
+        TabLayout tabLayout = new TabLayout(requireContext(), null, 0);
         tabLayout.setTabMode(TabLayout.MODE_FIXED);
         tabLayout.setTabGravity(TabLayout.GRAVITY_FILL);
         tabLayout.addTab(tabLayout.newTab().setText("全部"));
