@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.Computer
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DeleteOutline
@@ -348,6 +349,10 @@ private fun AddGameSheet(cb: LibraryCallbacks, close: () -> Unit) {
             AddGameRow(Icons.Outlined.Computer, "Local files", "Browse for a game on this device") {
                 close()
                 cb.onAddLocal()
+            }
+            AddGameRow(Icons.Outlined.Backup, "导入游戏数据包", "导入.grp.zip，一键恢复游戏+配置") {
+                close()
+                cb.onImportPackage()
             }
             Text("From store", Modifier.padding(top = 20.dp, bottom = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             AddGameRow(Icons.Outlined.Storefront, "Steam", "Open Steam") { close(); cb.onOpenStore("steam") }
