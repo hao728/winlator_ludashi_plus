@@ -1,0 +1,108 @@
+name: 自动合并上游提交
+
+on:
+  schedule:
+    # 每天 UTC 00:00（北京时间 08:00）自动检查上游更新
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      upstream_branch:
+        description: '上游分支名'
+        required: false
+        default: 'ludashi-plus/4.1'
+      target_branch:
+        description: '目标分支名'
+        required: false
+        default: 'ludashi-plus/4.1'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: 配置 Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: 添加上游仓库
+        run: |
+          git remote add upstream https://github.com/squalle0nhart/winlator_ludashi_plus.git || true
+          git fetch upstream --tags
+
+      - name: 合并上游提交
+        id: merge
+        run: |
+          UPSTREAM_BRANCH="${{ github.event.inputs.upstream_branch || 'ludashi-plus/4.1' }}"
+          TARGET_BRANCH="${{ github.event.inputs.target_branch || 'ludashi-plus/4.1' }}"
+
+          echo "目标分支: $TARGET_BRANCH"
+          echo "上游分支: $UPSTREAM_BRANCH"
+
+          git checkout "$TARGET_BRANCH"
+
+          # 检查是否有新的上游提交
+          BEHIND=$(git rev-list --count HEAD..upstream/$UPSTREAM_BRANCH 2>/dev/null || echo "0")
+          echo "落后上游提交数: $BEHIND"
+
+          if [ "$BEHIND" = "0" ]; then
+            echo "已经是最新，无需合并"
+            echo "has_updates=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "has_updates=true" >> $GITHUB_OUTPUT
+
+          # 尝试合并
+          if git merge upstream/$UPSTREAM_BRANCH --no-edit -X theirs; then
+            echo "合并成功"
+            echo "merge_success=true" >> $GITHUB_OUTPUT
+            git push origin "$TARGET_BRANCH"
+          else
+            echo "合并有冲突，需要手动解决"
+            echo "merge_success=false" >> $GITHUB_OUTPUT
+            git merge --abort || true
+
+            # 创建一个临时分支用于 PR
+            PR_BRANCH="sync-upstream-$(date +%Y%m%d-%H%M%S)"
+            git checkout -b "$PR_BRANCH"
+
+            # 尝试合并并保留冲突标记
+            git merge upstream/$UPSTREAM_BRANCH --no-edit -X theirs || true
+
+            # 添加所有冲突文件（保留冲突标记）
+            git add -A
+            git commit -m "自动合并上游（含冲突，需手动解决）" || true
+            git push origin "$PR_BRANCH"
+
+            echo "pr_branch=$PR_BRANCH" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 创建 PR（如果有冲突）
+        if: steps.merge.outputs.has_updates == 'true' && steps.merge.outputs.merge_success == 'false'
+        uses: repo-sync/pull-request@v2
+        with:
+          source_branch: ${{ steps.merge.outputs.pr_branch }}
+          destination_branch: ${{ github.event.inputs.target_branch || 'ludashi-plus/4.1' }}
+          pr_title: "自动合并上游提交（需手动解决冲突）"
+          pr_body: |
+            此 PR 由 GitHub Actions 自动创建。
+
+            上游仓库有新提交，但自动合并时遇到冲突，需要手动解决。
+
+            请检查冲突文件，解决后合并此 PR。
+          pr_label: "upstream-sync,conflict"
+
+      - name: 合并成功通知
+        if: steps.merge.outputs.has_updates == 'true' && steps.merge.outputs.merge_success == 'true'
+        run: |
+          echo "✅ 已成功合并上游提交并推送到目标分支"

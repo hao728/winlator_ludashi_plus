@@ -141,26 +141,15 @@ android {
         freeCompilerArgs += ['-opt-in=androidx.compose.material3.ExperimentalMaterial3Api']
     }
 
-    signingConfigs {
-        ludashi {
-            storeFile rootProject.file("Untitled.jks")
-            storePassword signingStorePassword.orNull
-            keyAlias signingKeyAlias
-            keyPassword signingKeyPassword.orNull
-        }
-    }
+    // 签名配置已移除：构建未签名APK
 
     // Keep Winlator’s buildTypes
     buildTypes {
         debug {
             minifyEnabled false
-            if (signingStorePassword.isPresent() && signingKeyPassword.isPresent()) {
-                signingConfig signingConfigs.ludashi
-            }
         }
         release {
             minifyEnabled false
-            signingConfig signingConfigs.ludashi
             crunchPngs false
         }
     }
