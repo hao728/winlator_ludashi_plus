@@ -1209,6 +1209,9 @@ public class ShortcutsFragment extends Fragment {
                 infoMsg.append("包含Wine运行环境: 否（需已安装Wine版本）\n");
             }
             infoMsg.append("数据包大小: ").append(formatPackageSize(pkgInfo.packageSize)).append("\n");
+            if (pkgInfo.hasShortcutConfig) {
+                infoMsg.append("包含快捷方式独立配置: 是 ✓（渲染器/DisplayX/帧生成等）\n");
+            }
 
             // ━━━ 容器配置（与默认值对比，含依赖检查）━━━
             infoMsg.append("\n━━━ 容器配置（与默认值对比）━━━\n");

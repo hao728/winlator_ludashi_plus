@@ -158,6 +158,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             if (item.getItemId() == R.id.bottom_nav_library) target = R.id.main_menu_shortcuts;
             else if (item.getItemId() == R.id.bottom_nav_containers) target = R.id.main_menu_containers;
             else if (item.getItemId() == R.id.bottom_nav_controls) target = R.id.main_menu_input_controls;
+            else if (item.getItemId() == R.id.bottom_nav_configs) target = R.id.main_menu_configs;
             else if (item.getItemId() == R.id.bottom_nav_settings) target = R.id.main_menu_settings;
             else return false;
             MenuItem destination = navigationView.getMenu().findItem(target);
@@ -394,6 +395,9 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             case R.id.main_menu_file_manager:
                 show(new FileManagerFragment(), false);
                 break;
+            case R.id.main_menu_configs:
+                show(new ConfigCenterFragment(), false);
+                break;
             case R.id.main_menu_settings:
                 show(new SettingsFragment(), false);
                 break;
@@ -426,6 +430,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         if (menuItemId == R.id.main_menu_shortcuts) bottomId = R.id.bottom_nav_library;
         else if (menuItemId == R.id.main_menu_containers) bottomId = R.id.bottom_nav_containers;
         else if (menuItemId == R.id.main_menu_input_controls) bottomId = R.id.bottom_nav_controls;
+        else if (menuItemId == R.id.main_menu_configs) bottomId = R.id.bottom_nav_configs;
         else if (menuItemId == R.id.main_menu_settings) bottomId = R.id.bottom_nav_settings;
         if (bottomId != 0 && bottomNavigation.getSelectedItemId() != bottomId) {
             syncingBottomNavigation = true;

@@ -9,6 +9,7 @@ import com.winlator.cmod.container.ContainerManager;
 import com.winlator.cmod.container.Shortcut;
 import com.winlator.cmod.contents.ContentsManager;
 import com.winlator.cmod.core.FileUtils;
+import com.winlator.cmod.core.KeyValueSet;
 import com.winlator.cmod.core.WineInfo;
 import com.winlator.cmod.xenvironment.ImageFs;
 
@@ -23,6 +24,7 @@ import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -83,6 +85,8 @@ public class GameRestorePackageManager {
         // v4：快捷方式信息（仅文件名和目录名，不含本地路径）
         public String executableName;
         public String gameDirName;
+        // v6：是否包含快捷方式独立配置（per-shortcut）
+        public boolean hasShortcutConfig;
     }
 
     private GameRestorePackageManager() {}
@@ -547,11 +551,21 @@ public class GameRestorePackageManager {
         if (container.getGraphicsDriverConfig() != null
                 && !container.getGraphicsDriverConfig().isEmpty()
                 && !container.getGraphicsDriverConfig().equals(Container.DEFAULT_GRAPHICSDRIVERCONFIG)) {
-            sb.append("• 图形驱动配置: 已自定义\n");
+            KeyValueSet gpuCfg = new KeyValueSet(container.getGraphicsDriverConfig());
+            String vkVer = gpuCfg.get("vulkanVersion");
+            String present = gpuCfg.get("presentMode");
+            sb.append("• 图形驱动配置: Vulkan").append(vkVer.isEmpty() ? "" : " " + vkVer)
+              .append(", present=").append(present.isEmpty() ? "默认" : present).append("\n");
         }
         appendDiffIfDifferent(sb, "DXWrapper", container.getDXWrapper(), Container.DEFAULT_DXWRAPPER);
         if (container.getDXWrapperConfig() != null && !container.getDXWrapperConfig().isEmpty()) {
-            sb.append("• DXWrapper配置: 已自定义\n");
+            KeyValueSet dxCfg = new KeyValueSet(container.getDXWrapperConfig());
+            String dxvkVer = dxCfg.get("version");
+            String framerate = dxCfg.get("framerate");
+            String async = dxCfg.get("async");
+            sb.append("• DXWrapper配置: DXVK").append(dxvkVer.isEmpty() ? "" : " " + dxvkVer)
+              .append(", 帧率=").append("0".equals(framerate) ? "不限" : framerate)
+              .append(", 异步=").append("1".equals(async) ? "开" : "关").append("\n");
         }
         appendDiffIfDifferent(sb, "Wine组件", container.getWinComponents(), Container.DEFAULT_WINCOMPONENTS);
         appendDiffIfDifferent(sb, "音频驱动", container.getAudioDriver(), Container.DEFAULT_AUDIO_DRIVER);
@@ -611,7 +625,15 @@ public class GameRestorePackageManager {
         // ━━ 环境变量 ━━
         if (container.getEnvVars() != null && !container.getEnvVars().isEmpty()
                 && !container.getEnvVars().equals(Container.DEFAULT_ENV_VARS)) {
-            sb.append("• 环境变量: 已自定义\n");
+            String env = container.getEnvVars();
+            StringBuilder envSummary = new StringBuilder();
+            if (env.contains("mesa_glthread=false")) envSummary.append("mesa_glthread=关 ");
+            if (env.contains("WINEESYNC=0")) envSummary.append("ESYNC=关 ");
+            if (env.contains("DXVK_HUD")) envSummary.append("DXVK_HUD ");
+            if (env.contains("TU_DEBUG")) envSummary.append("TU_DEBUG ");
+            if (envSummary.length() == 0) envSummary.append("已自定义");
+            sb.append("• 环境变量: ").append(envSummary.toString().trim())
+              .append("（").append(env.length()).append("字符）\n");
         }
 
         // ━━ CPU亲和性 ━━
@@ -716,6 +738,63 @@ public class GameRestorePackageManager {
         return sb.toString();
     }
 
+    /**
+     * v6：获取快捷方式独立配置（per-shortcut）与容器默认值的差异
+     * 只显示在shortcut.extraData中显式设置的项（即覆盖了容器默认值的项）
+     */
+    public static String getShortcutConfigDiff(Shortcut shortcut) {
+        if (shortcut == null) return "";
+        StringBuilder sb = new StringBuilder();
+
+        // 渲染器
+        if (shortcut.getExtra("rendererNative", null) != null)
+            sb.append("• EGL原生渲染: ").append(shortcut.getRendererNative() ? "开" : "关").append("\n");
+        if (shortcut.getExtra("rendererPresentMode", null) != null)
+            sb.append("• 渲染呈现模式: ").append(shortcut.getRendererPresentMode()).append("\n");
+        if (shortcut.getExtra("rendererDriverId", null) != null)
+            sb.append("• 渲染驱动ID: ").append(shortcut.getRendererDriverId()).append("\n");
+        if (shortcut.getExtra("rendererFilterMode", null) != null)
+            sb.append("• 渲染过滤模式: ").append(shortcut.getRendererFilterMode()).append("\n");
+        if (shortcut.getExtra("rendererSwapRB", null) != null)
+            sb.append("• 交换RB通道: ").append(shortcut.getRendererSwapRB() ? "开" : "关").append("\n");
+
+        // DisplayX
+        if (shortcut.getExtra("useDisplayX", null) != null || shortcut.getExtra("displayDriver", null) != null)
+            sb.append("• DisplayX: ").append(shortcut.getUseDisplayX() ? "开" : "关").append("\n");
+        if (shortcut.getExtra("trueDisplayX", null) != null)
+            sb.append("• TrueDisplayX: ").append(shortcut.getTrueDisplayX() ? "开" : "关").append("\n");
+        if (shortcut.getExtra("surfaceFormat", null) != null)
+            sb.append("• 表面格式: ").append(shortcut.getSurfaceFormat()).append("\n");
+        if (shortcut.getExtra("displayXPerformanceMode", null) != null)
+            sb.append("• DisplayX性能模式: ").append(shortcut.getDisplayXPerformanceMode() ? "开" : "关").append("\n");
+        if (shortcut.getExtra("displayXPresentAtRefreshRate", null) != null)
+            sb.append("• 刷新率同步: ").append(shortcut.getDisplayXPresentAtRefreshRate() ? "开" : "关").append("\n");
+        if (shortcut.getExtra("displayXBackPressure", null) != null)
+            sb.append("• DisplayX背压: ").append(shortcut.getDisplayXBackPressure() ? "开" : "关").append("\n");
+        if (shortcut.getExtra("displayXPrecisePresentation", null) != null)
+            sb.append("• 精确呈现: ").append(shortcut.getDisplayXPrecisePresentation() ? "开" : "关").append("\n");
+
+        // 帧生成
+        if (shortcut.getExtra("lsfgEnabled", null) != null)
+            sb.append("• LSFG帧生成: ").append(shortcut.isLsfgEnabled() ? "开" : "关")
+              .append("（倍率: ").append(shortcut.getLsfgMultiplier()).append("）\n");
+        if (shortcut.getExtra("frameGenBackend", null) != null)
+            sb.append("• 帧生成后端: ").append(shortcut.getFrameGenBackend()).append("\n");
+
+        // 其他
+        if (shortcut.getExtra("working_dir", null) != null && !shortcut.getExtra("working_dir").isEmpty())
+            sb.append("• 工作目录: 已设置\n");
+        if (shortcut.getExtra("arguments", null) != null && !shortcut.getExtra("arguments").isEmpty())
+            sb.append("• 启动参数: ").append(shortcut.getExtra("arguments")).append("\n");
+        if (shortcut.getExtra("disableXinput", null) != null)
+            sb.append("• 禁用XInput: ").append("1".equals(shortcut.getExtra("disableXinput")) ? "是" : "否").append("\n");
+
+        if (sb.length() == 0) {
+            sb.append("（快捷方式未设置独立配置，继承容器设置）");
+        }
+        return sb.toString();
+    }
+
     private static void appendDiffIfDifferent(StringBuilder sb, String label, String current, String defaultValue) {
         if (current != null && !current.isEmpty() && !current.equals(defaultValue)) {
             sb.append("• ").append(label).append(": ").append(current)
@@ -767,6 +846,10 @@ public class GameRestorePackageManager {
                 JSONObject shortcutJson = new JSONObject(FileUtils.readString(shortcutJsonFile));
                 info.executableName = shortcutJson.optString("executableName", "");
                 info.gameDirName = shortcutJson.optString("gameDirName", "");
+                // v6：检测是否包含快捷方式独立配置
+                info.hasShortcutConfig = shortcutJson.has("shortcutConfig")
+                        && shortcutJson.optJSONObject("shortcutConfig") != null
+                        && shortcutJson.optJSONObject("shortcutConfig").length() > 0;
             }
 
             return info;
@@ -948,6 +1031,25 @@ public class GameRestorePackageManager {
         json.put("rendererDriverId", shortcut.getRendererDriverId());
         json.put("rendererPresentMode", shortcut.getRendererPresentMode());
         json.put("rendererFilterMode", shortcut.getRendererFilterMode());
+
+        // v6：导出快捷方式独立配置（per-shortcut），排除设备专属字段
+        JSONObject shortcutConfig = new JSONObject();
+        String[] perShortcutKeys = {
+            "rendererNative", "rendererPresentMode", "rendererDriverId", "rendererFilterMode", "rendererSwapRB",
+            "useDisplayX", "trueDisplayX", "surfaceFormat",
+            "displayXPerformanceMode", "displayXPresentAtRefreshRate", "displayXBackPressure", "displayXPrecisePresentation",
+            "lsfgEnabled", "lsfgMultiplier", "lsfgFlowScale", "frameGenBackend",
+            "working_dir", "arguments", "disableXinput", "hudMode", "favorite"
+        };
+        for (String key : perShortcutKeys) {
+            String value = shortcut.getExtra(key, null);
+            if (value != null && !value.isEmpty()) {
+                shortcutConfig.put(key, value);
+            }
+        }
+        if (shortcutConfig.length() > 0) {
+            json.put("shortcutConfig", shortcutConfig);
+        }
         return json;
     }
 
@@ -1012,6 +1114,18 @@ public class GameRestorePackageManager {
                 int rendererFilterMode = shortcutJson.optInt("rendererFilterMode", 0);
                 if (rendererFilterMode != 0) {
                     writer.println("rendererFilterMode=" + rendererFilterMode);
+                }
+                // v6：应用快捷方式独立配置（per-shortcut）
+                JSONObject shortcutConfig = shortcutJson.optJSONObject("shortcutConfig");
+                if (shortcutConfig != null) {
+                    Iterator<String> keys = shortcutConfig.keys();
+                    while (keys.hasNext()) {
+                        String key = keys.next();
+                        String value = shortcutConfig.optString(key, "");
+                        if (!value.isEmpty()) {
+                            writer.println(key + "=" + value);
+                        }
+                    }
                 }
             }
 

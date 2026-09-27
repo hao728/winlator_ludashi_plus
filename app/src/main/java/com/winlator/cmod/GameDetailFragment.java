@@ -232,13 +232,40 @@ public class GameDetailFragment extends Fragment {
         if (context == null || shortcut == null || shortcut.container == null) return;
 
         try {
+            // v6：分类存储 - 检测游戏来源（本地/Steam）
+            String source = "local";
+            String pathLower = (shortcut.path != null) ? shortcut.path.toLowerCase() : "";
+            String nameLower = shortcut.name.toLowerCase();
+            if (pathLower.contains("steam") || nameLower.contains("steam")) {
+                source = "steam";
+            }
+
+            // 读取配置并添加gameName/source字段
             File configFile = shortcut.container.getConfigFile();
-            File exportDir = new File("/storage/emulated/0/Download/Winlator/Configs/");
+            String configContent = com.winlator.cmod.core.FileUtils.readString(configFile);
+            JSONObject configJson = new JSONObject(configContent);
+            configJson.put("gameName", shortcut.name);
+            configJson.put("source", source);
+
+            // 分类目录：Configs/local/ 或 Configs/steam/
+            File exportDir = new File("/storage/emulated/0/Download/Winlator/Configs/" + source + "/");
             if (!exportDir.exists()) exportDir.mkdirs();
-            String timeStamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(new java.util.Date());
-            File destFile = new File(exportDir, "container_config_" + shortcut.container.id + "_" + timeStamp + ".json");
-            com.winlator.cmod.core.FileUtils.copy(configFile, destFile);
-            Toast.makeText(context, "容器配置已导出: " + destFile.getPath(), Toast.LENGTH_LONG).show();
+
+            // 文件名：本地用游戏名，Steam用AppID（从名称中提取数字或用游戏名）
+            String fileName;
+            if ("steam".equals(source)) {
+                // 尝试从名称提取AppID（纯数字），否则用游戏名
+                String appId = shortcut.name.replaceAll("[^0-9]", "");
+                fileName = (appId.isEmpty() ? shortcut.name : appId) + ".json";
+            } else {
+                fileName = shortcut.name + ".json";
+            }
+            // 清理文件名中的非法字符
+            fileName = fileName.replaceAll("[^a-zA-Z0-9\\u4e00-\\u9fa5._-]", "_");
+
+            File destFile = new File(exportDir, fileName);
+            com.winlator.cmod.core.FileUtils.writeString(destFile, configJson.toString(2));
+            Toast.makeText(context, "容器配置已导出: " + source + "/" + fileName, Toast.LENGTH_LONG).show();
         } catch (Exception e) {
             Toast.makeText(context, "导出失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }
@@ -276,9 +303,8 @@ public class GameDetailFragment extends Fragment {
      * v3：导出选项对话框（仅配置 / 包含游戏本体）
      */
     /**
-     * v5：增强版导出确认窗口（隐私保护：不显示任何本地文件路径）
-     * 展示：游戏信息卡 + 容器配置差异对比 + 打包内容清单
-     * 三选项：仅配置 / 含游戏本体 / 完整数据包（含Wine运行环境）
+     * v6：导出确认窗口（RadioButton单选组 + 确认按钮）
+     * 展示：游戏信息卡 + 容器配置差异 + 快捷方式独立配置 + 导出类型单选
      */
     private void showExportDialog() {
         final Context context = getContext();
@@ -292,39 +318,74 @@ public class GameDetailFragment extends Fragment {
         long wineSize = GameRestorePackageManager.getWineRuntimeSize(shortcut);
         String wineSizeStr = (wineSize > 0) ? formatSizeMB(wineSize) : "（未知）";
 
-        // 容器配置差异对比
+        // 容器配置差异 + 快捷方式独立配置
         String configDiff = GameRestorePackageManager.getConfigDiffSummary(shortcut.container);
+        String shortcutDiff = GameRestorePackageManager.getShortcutConfigDiff(shortcut);
 
-        // 构建完整信息文本（不含任何本地路径）
-        StringBuilder message = new StringBuilder();
-        message.append("━━━ 游戏信息 ━━━\n");
-        message.append("游戏名称: ").append(shortcut.name).append("\n");
-        message.append("exe文件: ").append(exeFileName).append("\n");
-        message.append("游戏目录大小: ").append(gameSizeStr).append("\n");
-        message.append("Wine运行环境大小: ").append(wineSizeStr).append("\n");
-        message.append("关联容器: ").append(shortcut.container.getName())
-               .append("（ID: ").append(shortcut.container.id).append("）\n");
+        // 构建信息文本
+        StringBuilder info = new StringBuilder();
+        info.append("━━━ 游戏信息 ━━━\n");
+        info.append("游戏名称: ").append(shortcut.name).append("\n");
+        info.append("exe文件: ").append(exeFileName).append("\n");
+        info.append("游戏目录大小: ").append(gameSizeStr).append("\n");
+        info.append("Wine运行环境大小: ").append(wineSizeStr).append("\n");
+        info.append("关联容器: ").append(shortcut.container.getName())
+            .append("（ID: ").append(shortcut.container.id).append("）\n");
 
-        message.append("\n━━━ 容器配置（与默认值对比）━━━\n");
-        message.append(configDiff);
+        info.append("\n━━━ 容器配置（与默认值对比）━━━\n");
+        info.append(configDiff);
 
-        message.append("\n━━━ 请选择导出类型 ━━━\n");
-        message.append("1. 仅配置：容器配置+注册表+快捷方式（最小）\n");
-        message.append("2. 含游戏本体：上述 + 游戏文件目录（约").append(gameSizeStr).append("）\n");
-        message.append("3. 完整数据包：上述 + Wine运行环境（约").append(wineSizeStr).append("，可在任意设备还原）\n");
+        info.append("\n━━━ 快捷方式独立配置 ━━━\n");
+        info.append(shortcutDiff);
 
-        final String[] options = {
-            "仅导出配置",
-            "含游戏本体",
-            "完整数据包（含Wine运行环境）"
-        };
+        // 自定义View：ScrollView + TextView + RadioGroup
+        android.widget.ScrollView scrollView = new android.widget.ScrollView(context);
+        android.widget.LinearLayout layout = new android.widget.LinearLayout(context);
+        layout.setOrientation(android.widget.LinearLayout.VERTICAL);
+        int pad = (int) (20 * context.getResources().getDisplayMetrics().density);
+        layout.setPadding(pad, pad, pad, pad);
+
+        android.widget.TextView infoText = new android.widget.TextView(context);
+        infoText.setText(info.toString());
+        infoText.setTextSize(13);
+        layout.addView(infoText);
+
+        android.widget.TextView typeLabel = new android.widget.TextView(context);
+        typeLabel.setText("\n请选择导出类型：");
+        typeLabel.setTextSize(14);
+        typeLabel.setTypeface(null, android.graphics.Typeface.BOLD);
+        layout.addView(typeLabel);
+
+        final android.widget.RadioGroup radioGroup = new android.widget.RadioGroup(context);
+        radioGroup.setOrientation(android.widget.LinearLayout.VERTICAL);
+
+        android.widget.RadioButton rb1 = new android.widget.RadioButton(context);
+        rb1.setText("仅配置（容器配置+注册表+快捷方式，最小）");
+        rb1.setId(android.view.View.generateViewId());
+
+        android.widget.RadioButton rb2 = new android.widget.RadioButton(context);
+        rb2.setText("含游戏本体（+游戏文件目录，约" + gameSizeStr + "）");
+        rb2.setId(android.view.View.generateViewId());
+
+        android.widget.RadioButton rb3 = new android.widget.RadioButton(context);
+        rb3.setText("完整数据包（+Wine运行环境，约" + wineSizeStr + "，可任意设备还原）");
+        rb3.setId(android.view.View.generateViewId());
+
+        radioGroup.addView(rb1);
+        radioGroup.addView(rb2);
+        radioGroup.addView(rb3);
+        radioGroup.check(rb2.getId()); // 默认选中"含游戏本体"
+        layout.addView(radioGroup);
+
+        scrollView.addView(layout);
 
         new AlertDialog.Builder(context)
                 .setTitle("导出游戏数据包")
-                .setMessage(message.toString())
-                .setItems(options, (dialog, which) -> {
-                    boolean includeGameFiles = (which >= 1);
-                    boolean includeWineRuntime = (which == 2);
+                .setView(scrollView)
+                .setPositiveButton("确认导出", (dialog, which) -> {
+                    int checkedId = radioGroup.getCheckedRadioButtonId();
+                    boolean includeGameFiles = (checkedId == rb2.getId() || checkedId == rb3.getId());
+                    boolean includeWineRuntime = (checkedId == rb3.getId());
                     doExport(includeGameFiles, true, includeWineRuntime);
                 })
                 .setNegativeButton("取消", null)

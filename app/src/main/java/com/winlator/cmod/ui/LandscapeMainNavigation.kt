@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SportsEsports
@@ -147,6 +148,9 @@ fun LandscapeMainNavigation(
         }
         Destination(Icons.Outlined.SportsEsports, "Input Controls", selected == R.id.main_menu_input_controls) {
             activity?.navigateToMainDestination(R.id.main_menu_input_controls)
+        }
+        Destination(Icons.Outlined.Build, "Configs", selected == R.id.main_menu_configs) {
+            activity?.navigateToMainDestination(R.id.main_menu_configs)
         }
         Destination(Icons.Outlined.Settings, "Settings", selected == R.id.main_menu_settings) {
             activity?.navigateToMainDestination(R.id.main_menu_settings)
