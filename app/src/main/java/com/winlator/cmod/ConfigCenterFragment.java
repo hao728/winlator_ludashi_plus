@@ -18,6 +18,7 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -623,7 +624,7 @@ public class ConfigCenterFragment extends Fragment {
         final Context ctx = getContext();
         if (ctx == null) return;
 
-        // BUG3：数据包卡片 -> 显示数据包信息 + 导入按钮
+        // 数据包卡片 -> 走数据包详情（含包含内容/设置/依赖检查）
         if (e.isPackage) {
             showPackageDetail(e, ctx);
             return;
@@ -635,43 +636,83 @@ public class ConfigCenterFragment extends Fragment {
                 Toast.makeText(ctx, "无法读取配置文件", Toast.LENGTH_SHORT).show();
                 return;
             }
-            JSONObject json = new JSONObject(text);
+            final JSONObject json = new JSONObject(text);
 
-            // BUG1：用临时 Container 解析，显示所有非空配置项（与列表摘要一致）
-            String diffSummary = buildDiffSummary(json);
+            LinearLayout root = new LinearLayout(ctx);
+            root.setOrientation(LinearLayout.VERTICAL);
+            root.setPadding(dp(20), dp(16), dp(20), dp(12));
 
-            // 功能优化2：增强详情页展示
-            StringBuilder body = new StringBuilder();
-            body.append("游戏名称：").append(e.gameName != null && !e.gameName.isEmpty() ? e.gameName : "未命名").append('\n');
-            body.append("来源：").append("steam".equals(e.source) ? "Steam 游戏" : "本地游戏").append('\n');
-            body.append("修改时间：").append(formatTime(e.modifiedAt)).append('\n');
-            body.append("文件大小：").append(formatSize(e.size)).append('\n');
+            // ── 顶部：游戏图标 + 名称 + 来源标签 ──
+            LinearLayout header = new LinearLayout(ctx);
+            header.setOrientation(LinearLayout.HORIZONTAL);
+            header.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            FrameLayout iconWrap = buildDetailIcon(ctx, e);
+            header.addView(iconWrap, new LinearLayout.LayoutParams(dp(56), dp(56)));
 
-            // 检查是否包含游戏图标
-            String iconFile = json.optString("iconFile", "");
-            if (!iconFile.isEmpty()) {
-                body.append("包含游戏图标：").append(iconFile).append('\n');
+            LinearLayout nameCol = new LinearLayout(ctx);
+            nameCol.setOrientation(LinearLayout.VERTICAL);
+            LinearLayout.LayoutParams nclp = new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            nclp.leftMargin = dp(14);
+            nameCol.setLayoutParams(nclp);
+
+            TextView nameView = new TextView(ctx);
+            nameView.setText(e.gameName != null && !e.gameName.isEmpty() ? e.gameName : "未命名配置");
+            nameView.setTextColor(0xFFFFFFFF);
+            nameView.setTextSize(19);
+            nameView.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            nameView.setSingleLine(true);
+            nameView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            nameCol.addView(nameView);
+
+            TextView sourceTag = new TextView(ctx);
+            sourceTag.setText(sourceLabel(e.source, e.isPackage));
+            sourceTag.setTextSize(11);
+            sourceTag.setTextColor(0xFF4FC3F7);
+            GradientDrawable tagBg = new GradientDrawable();
+            tagBg.setShape(GradientDrawable.RECTANGLE);
+            tagBg.setCornerRadius(dp(4));
+            tagBg.setColor(0x224FC3F7);
+            sourceTag.setBackground(tagBg);
+            sourceTag.setPadding(dp(8), dp(2), dp(8), dp(2));
+            LinearLayout.LayoutParams stagLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            stagLp.topMargin = dp(6);
+            sourceTag.setLayoutParams(stagLp);
+            nameCol.addView(sourceTag);
+
+            header.addView(nameCol);
+            root.addView(header);
+
+            // ── 基本信息行：修改时间 · 文件大小 · 包含图标 ──
+            String iconMark = json.optString("iconFile", "").isEmpty() ? "" : "  ·  包含图标";
+            TextView metaLine = new TextView(ctx);
+            metaLine.setText(formatTime(e.modifiedAt) + "  ·  " + formatSize(e.size) + iconMark);
+            metaLine.setTextSize(12);
+            metaLine.setTextColor(0xFF8A8F98);
+            LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            mlp.topMargin = dp(10);
+            metaLine.setLayoutParams(mlp);
+            root.addView(metaLine);
+
+            // ── 配置摘要（只显示非默认/非空关键项）──
+            root.addView(sectionTitle(ctx, "配置摘要"), topLp(16));
+            String summary = buildConfigSummary(json);
+            root.addView(bodyText(ctx, summary.isEmpty() ? "（全部为默认设置）" : summary));
+
+            // ── 使用说明（notes/description）──
+            String notes = json.optString("notes", "");
+            if (notes.isEmpty()) notes = json.optString("description", "");
+            if (!notes.isEmpty()) {
+                root.addView(sectionTitle(ctx, "使用说明"), topLp(16));
+                root.addView(bodyText(ctx, notes));
             }
 
-            body.append("──────────────\n");
-            body.append("配置项：\n");
-            body.append(diffSummary.isEmpty() ? "  （无）" : diffSummary);
-
-            body.append("\n──────────────\n");
-            body.append("说明：此配置可一键应用到选中游戏的容器，\n");
-            body.append("覆盖Wine版本、驱动、组件等设置。");
-
             ScrollView sv = new ScrollView(ctx);
-            TextView tv = new TextView(ctx);
-            tv.setText(body.toString());
-            tv.setTextColor(0xFFE6E9EF);
-            tv.setTextSize(13);
-            tv.setLineSpacing(dp(2), 1.2f);
-            tv.setPadding(dp(20), dp(16), dp(20), dp(16));
-            sv.addView(tv);
+            sv.addView(root);
 
             new AlertDialog.Builder(ctx)
-                    .setTitle(e.gameName)
                     .setView(sv)
                     .setPositiveButton("应用到游戏", (d, w) -> pickGameToApply(e))
                     .setNeutralButton("删除", (d, w) -> confirmDelete(e))
@@ -682,37 +723,260 @@ public class ConfigCenterFragment extends Fragment {
         }
     }
 
-    /** BUG3：数据包详情弹窗，显示游戏名/包含内容/Wine版本，并提供导入按钮。 */
+    /** 详情页/数据包详情页的游戏图标：有真实图标用 Bitmap，否则首字母圆形底色。 */
+    private FrameLayout buildDetailIcon(Context ctx, ConfigEntry e) {
+        FrameLayout wrap = new FrameLayout(ctx);
+        ImageView iv = new ImageView(ctx);
+        iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        iv.setClipToOutline(true);
+        TextView tv = new TextView(ctx);
+        tv.setGravity(android.view.Gravity.CENTER);
+        tv.setTextColor(Color.WHITE);
+        tv.setTextSize(24);
+        tv.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        wrap.addView(iv, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        wrap.addView(tv, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        boolean hasIcon = false;
+        if (e.iconPath != null && !e.iconPath.isEmpty()) {
+            File iconFile = new File(e.iconPath);
+            if (iconFile.exists()) {
+                try {
+                    Bitmap bmp = BitmapFactory.decodeFile(e.iconPath);
+                    if (bmp != null) {
+                        iv.setImageBitmap(bmp);
+                        iv.setVisibility(View.VISIBLE);
+                        tv.setVisibility(View.GONE);
+                        GradientDrawable oval = new GradientDrawable();
+                        oval.setShape(GradientDrawable.OVAL);
+                        iv.setBackground(oval);
+                        hasIcon = true;
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+        if (!hasIcon) {
+            iv.setVisibility(View.GONE);
+            tv.setVisibility(View.VISIBLE);
+            String letter = (e.gameName == null || e.gameName.isEmpty()) ? "?"
+                    : e.gameName.substring(0, 1).toUpperCase(Locale.getDefault());
+            tv.setText(letter);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setShape(GradientDrawable.OVAL);
+            bg.setColor(colorFor(e.gameName));
+            tv.setBackground(bg);
+        }
+        return wrap;
+    }
+
+    private static String sourceLabel(String source, boolean isPackage) {
+        if (isPackage) return "数据包";
+        return "steam".equals(source) ? "Steam游戏" : "本地游戏";
+    }
+
+    /** 区块标题（蓝色加粗）。 */
+    private TextView sectionTitle(Context ctx, String text) {
+        TextView tv = new TextView(ctx);
+        tv.setText(text);
+        tv.setTextColor(0xFF4FC3F7);
+        tv.setTextSize(13);
+        tv.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        return tv;
+    }
+
+    /** 区块正文。 */
+    private TextView bodyText(Context ctx, String text) {
+        TextView tv = new TextView(ctx);
+        tv.setText(text);
+        tv.setTextColor(0xFFE6E9EF);
+        tv.setTextSize(13);
+        tv.setLineSpacing(dp(2), 1.25f);
+        return tv;
+    }
+
+    /** LinearLayout.LayoutParams，仅设置顶部 margin。 */
+    private LinearLayout.LayoutParams topLp(int topDp) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(topDp);
+        return lp;
+    }
+
+    /**
+     * 配置摘要：对比 Container.DEFAULT_* 常量，只提炼非默认/非空的关键项。
+     * 用户看到的是「这个配置能做什么」，而非全部技术字段。
+     */
+    private String buildConfigSummary(JSONObject json) {
+        try {
+            Container tmp = new Container(0);
+            tmp.loadData(json);
+            StringBuilder sb = new StringBuilder();
+            String defaultWine = WineInfo.MAIN_WINE_VERSION.identifier();
+
+            if (isDiff(tmp.getWineVersion(), defaultWine)) {
+                sb.append("• Wine版本: ").append(tmp.getWineVersion()).append('\n');
+            }
+            if (isDiff(tmp.getGraphicsDriver(), Container.DEFAULT_GRAPHICS_DRIVER)) {
+                String vk = kvs(tmp.getGraphicsDriverConfig(), "vulkanVersion");
+                sb.append("• 图形驱动: ").append(tmp.getGraphicsDriver());
+                if (!vk.isEmpty()) sb.append(" (Vulkan ").append(vk).append(')');
+                sb.append('\n');
+            }
+            if (isDiff(tmp.getDXWrapper(), Container.DEFAULT_DXWRAPPER)) {
+                String dxvk = kvs(tmp.getDXWrapperConfig(), "version");
+                sb.append("• DXWrapper: ").append(tmp.getDXWrapper());
+                if (!dxvk.isEmpty()) sb.append(" (DXVK ").append(dxvk).append(')');
+                sb.append('\n');
+            }
+            // 转译器：Box64 / FEXCore（版本+预设）
+            String emu = tmp.getEmulator();
+            boolean isBox64 = emu != null && emu.toLowerCase(Locale.US).contains("box64");
+            boolean isFex = emu != null && emu.toLowerCase(Locale.US).contains("fex");
+            if (isBox64 && notEmpty(tmp.getBox64Version())) {
+                sb.append("• 转译器: Box64 ").append(tmp.getBox64Version());
+                if (notEmpty(tmp.getBox64Preset())) sb.append("（预设: ").append(tmp.getBox64Preset()).append('）');
+                sb.append('\n');
+            } else if (isFex && notEmpty(tmp.getFEXCoreVersion())) {
+                sb.append("• 转译器: FEXCore ").append(tmp.getFEXCoreVersion());
+                if (notEmpty(tmp.getFEXCorePreset())) sb.append("（预设: ").append(tmp.getFEXCorePreset()).append('）');
+                sb.append('\n');
+            }
+            if (isDiff(tmp.getScreenSize(), Container.DEFAULT_SCREEN_SIZE)) {
+                sb.append("• 屏幕分辨率: ").append(tmp.getScreenSize()).append('\n');
+            }
+            if (isDiff(tmp.getAudioDriver(), Container.DEFAULT_AUDIO_DRIVER)) {
+                sb.append("• 音频驱动: ").append(tmp.getAudioDriver()).append('\n');
+            }
+            if (notEmpty(tmp.getEnvVars()) && !tmp.getEnvVars().equals(Container.DEFAULT_ENV_VARS)) {
+                sb.append("• 环境变量: 已自定义\n");
+            }
+            return sb.toString().trim();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private static boolean isDiff(String value, String def) {
+        return value != null && !value.isEmpty() && !value.equals(def);
+    }
+
+    private static boolean notEmpty(String value) {
+        return value != null && !value.isEmpty();
+    }
+
+    private static String kvs(String config, String key) {
+        if (config == null || config.isEmpty()) return "";
+        try {
+            String v = new com.winlator.cmod.core.KeyValueSet(config).get(key);
+            return v == null ? "" : v;
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /** 数据包详情：游戏信息 + 包含内容 + 将应用的设置 + 依赖检查（pre-apply diff）。 */
     private void showPackageDetail(ConfigEntry e, final Context ctx) {
         try {
-            GameRestorePackageManager.PackageInfo info = e.packageInfo;
-            StringBuilder body = new StringBuilder();
-            body.append("━━━ 游戏数据包 ━━━\n");
-            body.append("游戏名称: ").append(e.gameName).append("\n");
-            body.append("文件大小: ").append(formatSize(e.size)).append("\n");
-            body.append("修改时间: ").append(formatTime(e.modifiedAt)).append("\n\n");
-            body.append("包含内容:\n");
-            body.append("  · 游戏文件: ").append(info != null && info.containsGameFiles ? "是" : "否").append("\n");
-            body.append("  · Wine运行环境: ").append(info != null && info.containsWineRuntime ? "是" : "否").append("\n");
-            body.append("  · 注册表: ").append(info != null && info.containsRegistry ? "是" : "否").append("\n\n");
-            if (info != null) {
-                body.append("━━━ 转译设置 ━━━\n");
-                String diff = GameRestorePackageManager.getConfigDiffFromMetadata(info, ctx);
-                body.append(diff.isEmpty() ? "（默认配置）" : diff);
+            final GameRestorePackageManager.PackageInfo info = e.packageInfo;
+
+            LinearLayout root = new LinearLayout(ctx);
+            root.setOrientation(LinearLayout.VERTICAL);
+            root.setPadding(dp(20), dp(16), dp(20), dp(12));
+
+            // ── 顶部：图标 + 名称 + 数据包标签 ──
+            LinearLayout header = new LinearLayout(ctx);
+            header.setOrientation(LinearLayout.HORIZONTAL);
+            header.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            header.addView(buildDetailIcon(ctx, e), new LinearLayout.LayoutParams(dp(56), dp(56)));
+            LinearLayout nameCol = new LinearLayout(ctx);
+            nameCol.setOrientation(LinearLayout.VERTICAL);
+            LinearLayout.LayoutParams nclp = new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            nclp.leftMargin = dp(14);
+            nameCol.setLayoutParams(nclp);
+            TextView nameView = new TextView(ctx);
+            nameView.setText(e.gameName != null && !e.gameName.isEmpty() ? e.gameName : "未命名数据包");
+            nameView.setTextColor(0xFFFFFFFF);
+            nameView.setTextSize(19);
+            nameView.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            nameView.setSingleLine(true);
+            nameView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            nameCol.addView(nameView);
+            TextView sourceTag = new TextView(ctx);
+            sourceTag.setText("数据包");
+            sourceTag.setTextSize(11);
+            sourceTag.setTextColor(0xFFFFB74D);
+            GradientDrawable tagBg = new GradientDrawable();
+            tagBg.setShape(GradientDrawable.RECTANGLE);
+            tagBg.setCornerRadius(dp(4));
+            tagBg.setColor(0x22FFB74D);
+            sourceTag.setBackground(tagBg);
+            sourceTag.setPadding(dp(8), dp(2), dp(8), dp(2));
+            LinearLayout.LayoutParams stagLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            stagLp.topMargin = dp(6);
+            sourceTag.setLayoutParams(stagLp);
+            nameCol.addView(sourceTag);
+            header.addView(nameCol);
+            root.addView(header);
+
+            // ── 基本信息行 ──
+            TextView metaLine = new TextView(ctx);
+            metaLine.setText(formatTime(e.modifiedAt) + "  ·  " + formatSize(e.size));
+            metaLine.setTextSize(12);
+            metaLine.setTextColor(0xFF8A8F98);
+            LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            mlp.topMargin = dp(10);
+            metaLine.setLayoutParams(mlp);
+            root.addView(metaLine);
+
+            // ── 包含内容 ──
+            root.addView(sectionTitle(ctx, "包含内容"), topLp(16));
+            StringBuilder ci = new StringBuilder();
+            ci.append("游戏文件 ").append(info != null && info.containsGameFiles ? "✓" : "✗").append('\n');
+            ci.append("Wine运行环境 ").append(info != null && info.containsWineRuntime ? "✓" : "✗").append('\n');
+            ci.append("快捷方式独立配置 ").append(info != null && info.hasShortcutConfig ? "✓" : "✗");
+            root.addView(bodyText(ctx, ci.toString()));
+
+            // ── 将应用的设置 ──
+            root.addView(sectionTitle(ctx, "将应用的设置"), topLp(14));
+            String diff = info == null ? "" : GameRestorePackageManager.getConfigDiffFromMetadata(info, ctx);
+            root.addView(bodyText(ctx, diff.isEmpty() ? "（全部为默认设置）" : diff));
+
+            // ── 依赖检查 ──
+            root.addView(sectionTitle(ctx, "依赖检查"), topLp(14));
+            boolean wineBundled = info != null && info.containsWineRuntime;
+            boolean wineInstalled = wineBundled || (info != null
+                    && GameRestorePackageManager.isWineVersionInstalled(ctx, info.wineVersion));
+            TextView depView = new TextView(ctx);
+            StringBuilder dep = new StringBuilder();
+            dep.append("Wine版本: ");
+            if (wineBundled) dep.append("数据包内置 ✓");
+            else if (wineInstalled) dep.append("已安装 ✓");
+            else dep.append("未安装 ✗");
+            depView.setText(dep.toString());
+            depView.setTextSize(13);
+            depView.setLineSpacing(dp(2), 1.25f);
+            depView.setTextColor(wineInstalled ? 0xFFE6E9EF : 0xFFFF7043);
+            root.addView(depView);
+            if (!wineInstalled && info != null && info.wineVersion != null && !info.wineVersion.isEmpty()) {
+                TextView warn = new TextView(ctx);
+                warn.setText("⚠ 导入前请先在「设置 → 组件管理」安装 " + info.wineVersion);
+                warn.setTextColor(0xFFFF7043);
+                warn.setTextSize(12);
+                LinearLayout.LayoutParams wlp = topLp(6);
+                warn.setLayoutParams(wlp);
+                root.addView(warn);
             }
 
             ScrollView sv = new ScrollView(ctx);
-            TextView tv = new TextView(ctx);
-            tv.setText(body.toString());
-            tv.setTextColor(0xFFE6E9EF);
-            tv.setTextSize(13);
-            tv.setLineSpacing(dp(2), 1.2f);
-            tv.setPadding(dp(20), dp(16), dp(20), dp(16));
-            sv.addView(tv);
+            sv.addView(root);
 
             final File pkgFile = e.file;
             new AlertDialog.Builder(ctx)
-                    .setTitle(e.gameName + "（数据包）")
                     .setView(sv)
                     .setPositiveButton("导入此数据包", (d, w) -> importLocalPackageFile(pkgFile))
                     .setNeutralButton("删除", (d, w) -> confirmDelete(e))
@@ -754,75 +1018,6 @@ public class ConfigCenterFragment extends Fragment {
                         Toast.makeText(ctx, "导入失败: " + ex.getMessage(), Toast.LENGTH_LONG).show());
             }
         });
-    }
-
-    /** 构造配置摘要：显示所有非空配置项（与列表项一致），并补充 FEXCore/环境变量/CPU亲和性/DXVK/Vulkan。 */
-    private String buildDiffSummary(JSONObject json) {
-        try {
-            StringBuilder sb = new StringBuilder();
-            Container tmp = new Container(0);
-            tmp.loadData(json);
-
-            // 与列表项一致：显示所有非空项，而非只显示非默认项
-            appendSummaryPart(sb, "Wine版本", tmp.getWineVersion());
-            appendSummaryPart(sb, "图形驱动", tmp.getGraphicsDriver());
-            appendSummaryPart(sb, "DXWrapper", tmp.getDXWrapper());
-            appendSummaryPart(sb, "音频驱动", tmp.getAudioDriver());
-            appendSummaryPart(sb, "模拟器", tmp.getEmulator());
-            appendSummaryPart(sb, "屏幕分辨率", tmp.getScreenSize());
-            if (tmp.getBox64Version() != null && !tmp.getBox64Version().isEmpty()) {
-                String preset = tmp.getBox64Preset();
-                sb.append("  · Box64: ").append(tmp.getBox64Version());
-                if (preset != null && !preset.isEmpty()) sb.append("（预设: ").append(preset).append('）');
-                sb.append('\n');
-            }
-            // BUG1：补充 FEXCore 版本+预设
-            if (tmp.getFEXCoreVersion() != null && !tmp.getFEXCoreVersion().isEmpty()) {
-                String preset = tmp.getFEXCorePreset();
-                sb.append("  · FEXCore: ").append(tmp.getFEXCoreVersion());
-                if (preset != null && !preset.isEmpty()) sb.append("（预设: ").append(preset).append('）');
-                sb.append('\n');
-            }
-            // BUG1：环境变量（非默认时显示"已自定义"）
-            if (tmp.getEnvVars() != null && !tmp.getEnvVars().isEmpty()
-                    && !tmp.getEnvVars().equals(Container.DEFAULT_ENV_VARS)) {
-                sb.append("  · 环境变量: 已自定义（").append(tmp.getEnvVars().length()).append("字符）\n");
-            }
-            // BUG1：CPU亲和性
-            if (tmp.getCPUList() != null && !tmp.getCPUList().isEmpty()) {
-                sb.append("  · CPU亲和性: ").append(tmp.getCPUList()).append('\n');
-            }
-            // BUG1：DXVK 版本 / Vulkan 版本
-            try {
-                if (tmp.getDXWrapperConfig() != null && !tmp.getDXWrapperConfig().isEmpty()) {
-                    com.winlator.cmod.core.KeyValueSet dxCfg =
-                            new com.winlator.cmod.core.KeyValueSet(tmp.getDXWrapperConfig());
-                    String dxvkVer = dxCfg.get("version");
-                    if (dxvkVer != null && !dxvkVer.isEmpty()) {
-                        sb.append("  · DXVK版本: ").append(dxvkVer).append('\n');
-                    }
-                }
-                if (tmp.getGraphicsDriverConfig() != null && !tmp.getGraphicsDriverConfig().isEmpty()) {
-                    com.winlator.cmod.core.KeyValueSet gpuCfg =
-                            new com.winlator.cmod.core.KeyValueSet(tmp.getGraphicsDriverConfig());
-                    String vkVer = gpuCfg.get("vulkanVersion");
-                    if (vkVer != null && !vkVer.isEmpty()) {
-                        sb.append("  · Vulkan版本: ").append(vkVer).append('\n');
-                    }
-                }
-            } catch (Exception ignored) {}
-
-            return sb.toString().trim();
-        } catch (Exception e) {
-            // BUG1修复：Container.loadData可能崩溃，返回错误提示而不闪退
-            return "（配置解析失败）";
-        }
-    }
-
-    /** BUG1：追加非空配置项（与列表摘要逻辑一致）。 */
-    private void appendSummaryPart(StringBuilder sb, String label, String value) {
-        if (value == null || value.isEmpty()) return;
-        sb.append("  · ").append(label).append(": ").append(value).append('\n');
     }
 
     private void pickGameToApply(ConfigEntry e) {
@@ -984,56 +1179,93 @@ public class ConfigCenterFragment extends Fragment {
     }
 
     /**
-     * BUG4：导入前的信息确认对话框。
-     * 显示游戏基本信息 + 转译设置摘要（Wine/驱动/DXWrapper/Box64/FEXCore/分辨率/音频），
-     * 只显示非空/非默认项。
+     * 导入前的确认对话框（pre-apply diff）。
+     * 分区展示：游戏信息 / 包含内容 / 将应用的设置 / 依赖检查。
+     * Wine 缺失时不阻断弹窗，而是禁用确认按钮并给出警告。
      */
     private void confirmAndImportPackage(final Context ctx, final File tempFile,
                                          final GameRestorePackageManager.PackageInfo pkgInfo) {
-        // 检查Wine依赖（即使数据包自带Wine运行环境，Wine二进制仍需已安装）
-        final boolean wineInstalled = pkgInfo.containsWineRuntime ||
-                GameRestorePackageManager.isWineVersionInstalled(ctx, pkgInfo.wineVersion);
+        final boolean wineBundled = pkgInfo.containsWineRuntime;
+        final boolean wineInstalled = wineBundled
+                || GameRestorePackageManager.isWineVersionInstalled(ctx, pkgInfo.wineVersion);
 
-        if (!wineInstalled) {
-            new AlertDialog.Builder(ctx)
-                    .setTitle("无法导入")
-                    .setMessage("数据包需要Wine版本：" + pkgInfo.wineVersion + "\n\n" +
-                            "当前未安装该版本。\n\n" +
-                            "请先在「设置 → 组件管理」中安装 " + pkgInfo.wineVersion + " 后再导入此数据包。")
-                    .setPositiveButton("确定", (dialog, which) -> tempFile.delete())
-                    .setCancelable(false)
-                    .show();
-            return;
-        }
+        LinearLayout root = new LinearLayout(ctx);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(20), dp(16), dp(20), dp(12));
 
-        // 信息确认对话框
-        StringBuilder infoMsg = new StringBuilder();
-        infoMsg.append("━━━ 游戏信息 ━━━\n");
-        infoMsg.append("游戏名称: ").append(pkgInfo.gameName).append("\n");
-        if (pkgInfo.executableName != null && !pkgInfo.executableName.isEmpty()) {
-            infoMsg.append("exe文件: ").append(pkgInfo.executableName).append("\n");
+        // ── 游戏信息 ──
+        root.addView(sectionTitle(ctx, "游戏信息"), topLp(0));
+        StringBuilder gi = new StringBuilder();
+        gi.append("游戏名称: ").append(pkgInfo.gameName).append('\n');
+        // 隐私保护：exe 只显示文件名，不显示路径
+        String exeName = pkgInfo.executableName != null ? pkgInfo.executableName : "";
+        if (!exeName.isEmpty()) {
+            int slash = Math.max(exeName.lastIndexOf('/'), exeName.lastIndexOf(File.separatorChar));
+            if (slash >= 0 && slash < exeName.length() - 1) exeName = exeName.substring(slash + 1);
+            gi.append("exe文件: ").append(exeName);
         }
-        infoMsg.append("包含游戏文件: ").append(pkgInfo.containsGameFiles ? "是" : "否（仅配置）").append("\n");
-        if (pkgInfo.containsWineRuntime) {
-            infoMsg.append("包含Wine运行环境: 是 ✓\n");
-        }
-        if (pkgInfo.hasShortcutConfig) {
-            infoMsg.append("包含快捷方式独立配置: 是 ✓\n");
-        }
+        root.addView(bodyText(ctx, gi.toString().trim()));
 
-        // BUG4：转译设置部分
-        infoMsg.append("\n━━━ 转译设置 ━━━\n");
+        // ── 包含内容 ──
+        root.addView(sectionTitle(ctx, "包含内容"), topLp(14));
+        StringBuilder ci = new StringBuilder();
+        ci.append("游戏文件 ").append(pkgInfo.containsGameFiles ? "✓" : "✗").append('\n');
+        ci.append("Wine运行环境 ").append(pkgInfo.containsWineRuntime ? "✓" : "✗").append('\n');
+        ci.append("快捷方式独立配置 ").append(pkgInfo.hasShortcutConfig ? "✓" : "✗");
+        root.addView(bodyText(ctx, ci.toString()));
+
+        // ── 将应用的设置（只显示非默认/非空关键项）──
+        root.addView(sectionTitle(ctx, "将应用的设置"), topLp(14));
         String diff = GameRestorePackageManager.getConfigDiffFromMetadata(pkgInfo, ctx);
-        infoMsg.append(diff.isEmpty() ? "（全部使用默认配置）" : diff);
+        root.addView(bodyText(ctx, diff.isEmpty() ? "（全部为默认设置）" : diff));
 
-        infoMsg.append("\n是否确认导入？");
+        // ── 依赖检查 ──
+        root.addView(sectionTitle(ctx, "依赖检查"), topLp(14));
+        TextView depView = new TextView(ctx);
+        StringBuilder dep = new StringBuilder();
+        dep.append("Wine版本: ");
+        if (wineBundled) dep.append("数据包内置 ✓");
+        else if (wineInstalled) dep.append("已安装 ✓");
+        else dep.append("未安装 ✗");
+        depView.setText(dep.toString());
+        depView.setTextSize(13);
+        depView.setLineSpacing(dp(2), 1.25f);
+        depView.setTextColor(wineInstalled ? 0xFFE6E9EF : 0xFFFF7043);
+        root.addView(depView);
+        if (!wineInstalled) {
+            TextView warn = new TextView(ctx);
+            warn.setText("⚠ 请先在「设置 → 组件管理」安装 " + pkgInfo.wineVersion + " 后再导入");
+            warn.setTextColor(0xFFFF7043);
+            warn.setTextSize(12);
+            warn.setLayoutParams(topLp(6));
+            root.addView(warn);
+        }
 
-        new AlertDialog.Builder(ctx)
-                .setTitle("确认导入游戏数据包")
-                .setMessage(infoMsg.toString())
-                .setPositiveButton("确认导入", (dialog, which) -> startPackageImport(ctx, tempFile))
-                .setNegativeButton("取消", (dialog, which) -> tempFile.delete())
-                .show();
+        ScrollView sv = new ScrollView(ctx);
+        sv.addView(root);
+
+        final AlertDialog dialog = new AlertDialog.Builder(ctx)
+                .setTitle("导入游戏数据包")
+                .setView(sv)
+                .setPositiveButton("确认导入", null)
+                .setNegativeButton("取消", (d, w) -> tempFile.delete())
+                .create();
+        dialog.setOnShowListener(d -> {
+            Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            if (!wineInstalled) {
+                // 依赖缺失：禁用确认按钮，点击提示先安装
+                positive.setEnabled(false);
+                positive.setOnClickListener(v -> Toast.makeText(ctx,
+                        "请先安装 " + pkgInfo.wineVersion + " 后再导入",
+                        Toast.LENGTH_LONG).show());
+            } else {
+                positive.setOnClickListener(v -> {
+                    dialog.dismiss();
+                    startPackageImport(ctx, tempFile);
+                });
+            }
+        });
+        dialog.show();
     }
 
     private ProgressDialog importProgressDialog;

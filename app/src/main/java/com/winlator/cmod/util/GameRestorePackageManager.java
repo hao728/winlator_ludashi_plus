@@ -75,6 +75,7 @@ public class GameRestorePackageManager {
         public long packageSize;
         public String[] requiredComponents;
         public String dxwrapper;
+        public String dxwrapperConfig;
         public String wincomponents;
         public String emulator;
         public String box64Version;
@@ -761,89 +762,81 @@ public class GameRestorePackageManager {
      * 格式："• Wine版本: proton-9.0-arm64ec ✓已安装"
      * 功能优化1：统一使用Container.DEFAULT_*常量对比，小选项合并显示
      */
+    /**
+     * 对比数据包元信息与默认配置，返回「将应用的设置」摘要。
+     * 设计原则（参考Mali/Bannerlator）：只提炼关键人类可读项，不暴露细粒度技术字段。
+     * 仅显示非默认/非空项，每行一个设置；全部默认时返回空串（由调用方提示）。
+     * 安装/依赖状态不在此处显示，由导入弹窗的「依赖检查」区域统一提示。
+     */
     public static String getConfigDiffFromMetadata(PackageInfo info, Context context) {
         if (info == null) return "";
         StringBuilder sb = new StringBuilder();
         String defaultWine = WineInfo.MAIN_WINE_VERSION.identifier();
 
-        // Wine版本（关键依赖，检查安装状态）
-        if (info.wineVersion != null && !info.wineVersion.isEmpty() && !info.wineVersion.equals(defaultWine)) {
-            boolean installed = isWineVersionInstalled(context, info.wineVersion);
-            sb.append("• Wine版本: ").append(info.wineVersion)
-              .append(installed ? " ✓已安装" : " ✗未安装").append("\n");
-        } else if (info.wineVersion != null && !info.wineVersion.isEmpty()) {
-            boolean installed = isWineVersionInstalled(context, info.wineVersion);
-            sb.append("• Wine版本: ").append(info.wineVersion)
-              .append("（默认）").append(installed ? " ✓已安装" : " ✗未安装").append("\n");
+        // Wine版本
+        if (isNonDefault(info.wineVersion, defaultWine)) {
+            sb.append("• Wine版本: ").append(info.wineVersion).append('\n');
+        }
+        // 图形驱动（附Vulkan版本）
+        if (isNonDefault(info.graphicsDriver, Container.DEFAULT_GRAPHICS_DRIVER)) {
+            String vkVer = getKvsValue(info.graphicsDriverConfig, "vulkanVersion");
+            sb.append("• 图形驱动: ").append(info.graphicsDriver);
+            if (!vkVer.isEmpty()) sb.append(" (Vulkan ").append(vkVer).append(')');
+            sb.append('\n');
+        }
+        // DXWrapper（附DXVK版本）
+        if (isNonDefault(info.dxwrapper, Container.DEFAULT_DXWRAPPER)) {
+            String dxvkVer = getKvsValue(info.dxwrapperConfig, "version");
+            sb.append("• DXWrapper: ").append(info.dxwrapper);
+            if (!dxvkVer.isEmpty()) sb.append(" (DXVK ").append(dxvkVer).append(')');
+            sb.append('\n');
+        }
+        // 转译器：Box64 / FEXCore（版本+预设）
+        if (isNotEmpty(info.box64Version)) {
+            sb.append("• 转译器: Box64 ").append(info.box64Version);
+            if (isNotEmpty(info.box64Preset)) sb.append("（预设: ").append(info.box64Preset).append('）');
+            sb.append('\n');
+        } else if (isNotEmpty(info.fexcoreVersion)) {
+            sb.append("• 转译器: FEXCore ").append(info.fexcoreVersion);
+            if (isNotEmpty(info.fexcorePreset)) sb.append("（预设: ").append(info.fexcorePreset).append('）');
+            sb.append('\n');
+        } else if (isNonDefault(info.emulator, Container.DEFAULT_EMULATOR)) {
+            sb.append("• 转译器: ").append(info.emulator).append('\n');
+        }
+        // 屏幕分辨率
+        if (isNonDefault(info.screenSize, Container.DEFAULT_SCREEN_SIZE)) {
+            sb.append("• 屏幕分辨率: ").append(info.screenSize).append('\n');
+        }
+        // 音频驱动
+        if (isNonDefault(info.audioDriver, Container.DEFAULT_AUDIO_DRIVER)) {
+            sb.append("• 音频驱动: ").append(info.audioDriver).append('\n');
+        }
+        // 环境变量（非默认时只提示已自定义，不暴露具体变量）
+        if (isNotEmpty(info.envVars) && !info.envVars.equals(Container.DEFAULT_ENV_VARS)) {
+            sb.append("• 环境变量: 已自定义\n");
         }
 
-        // 图形驱动（对比Container.DEFAULT_GRAPHICS_DRIVER）
-        if (info.graphicsDriver != null && !info.graphicsDriver.isEmpty()
-                && !info.graphicsDriver.equals(Container.DEFAULT_GRAPHICS_DRIVER)) {
-            boolean builtin = "zink".equals(info.graphicsDriver) || "freedreno".equals(info.graphicsDriver)
-                    || "turnip".equals(info.graphicsDriver);
-            sb.append("• 图形驱动: ").append(info.graphicsDriver)
-              .append(builtin ? " ✓内置" : " ⚠需确认").append("\n");
-        }
+        return sb.toString().trim();
+    }
 
-        // DXWrapper（对比Container.DEFAULT_DXWRAPPER）
-        if (info.dxwrapper != null && !info.dxwrapper.isEmpty()
-                && !info.dxwrapper.equals(Container.DEFAULT_DXWRAPPER)) {
-            sb.append("• DXWrapper: ").append(info.dxwrapper).append(" ⚠需确认\n");
-        }
+    /** 非空且与默认值不同。 */
+    private static boolean isNonDefault(String value, String defaultValue) {
+        return value != null && !value.isEmpty() && !value.equals(defaultValue);
+    }
 
-        // Wine组件（小选项合并，对比Container.DEFAULT_WINCOMPONENTS）
-        if (info.wincomponents != null && !info.wincomponents.isEmpty()
-                && !info.wincomponents.equals(Container.DEFAULT_WINCOMPONENTS)) {
-            sb.append("• Wine组件: 已自定义\n");
-        }
+    private static boolean isNotEmpty(String value) {
+        return value != null && !value.isEmpty();
+    }
 
-        // 转译器/模拟器（对比Container.DEFAULT_EMULATOR）
-        if (info.emulator != null && !info.emulator.isEmpty()
-                && !info.emulator.equals(Container.DEFAULT_EMULATOR)) {
-            sb.append("• 模拟器: ").append(info.emulator).append("\n");
+    /** 从 KeyValueSet 配置串中安全读取某个键。 */
+    private static String getKvsValue(String config, String key) {
+        if (config == null || config.isEmpty()) return "";
+        try {
+            String v = new KeyValueSet(config).get(key);
+            return v == null ? "" : v;
+        } catch (Exception e) {
+            return "";
         }
-
-        // Box64版本 + 预设（非空时显示）
-        if (info.box64Version != null && !info.box64Version.isEmpty()) {
-            sb.append("• Box64版本: ").append(info.box64Version);
-            if (info.box64Preset != null && !info.box64Preset.isEmpty()) {
-                sb.append("（预设: ").append(info.box64Preset).append("）");
-            }
-            sb.append("\n");
-        }
-
-        // FEXCore版本 + 预设（非空时显示）
-        if (info.fexcoreVersion != null && !info.fexcoreVersion.isEmpty()) {
-            sb.append("• FEXCore版本: ").append(info.fexcoreVersion);
-            if (info.fexcorePreset != null && !info.fexcorePreset.isEmpty()) {
-                sb.append("（预设: ").append(info.fexcorePreset).append("）");
-            }
-            sb.append("\n");
-        }
-
-        // 屏幕分辨率（对比Container.DEFAULT_SCREEN_SIZE）
-        if (info.screenSize != null && !info.screenSize.isEmpty()
-                && !info.screenSize.equals(Container.DEFAULT_SCREEN_SIZE)) {
-            sb.append("• 屏幕分辨率: ").append(info.screenSize).append("\n");
-        }
-
-        // 音频驱动（对比Container.DEFAULT_AUDIO_DRIVER）
-        if (info.audioDriver != null && !info.audioDriver.isEmpty()
-                && !info.audioDriver.equals(Container.DEFAULT_AUDIO_DRIVER)) {
-            sb.append("• 音频驱动: ").append(info.audioDriver).append("\n");
-        }
-
-        // 环境变量（非默认时显示"已自定义（X字符）"）
-        if (info.envVars != null && !info.envVars.isEmpty()
-                && !info.envVars.equals(Container.DEFAULT_ENV_VARS)) {
-            sb.append("• 环境变量: 已自定义（").append(info.envVars.length()).append("字符）\n");
-        }
-
-        if (sb.length() == 0) {
-            sb.append("（全部使用默认配置）");
-        }
-        return sb.toString();
     }
 
     /**
@@ -932,6 +925,7 @@ public class GameRestorePackageManager {
             info.containsWineRuntime = metadata.optBoolean("containsWineRuntime", false);
             info.packageSize = packageFile.length();
             info.dxwrapper = metadata.optString("dxwrapper", "");
+            info.dxwrapperConfig = metadata.optString("dxwrapperConfig", "");
             info.wincomponents = metadata.optString("wincomponents", "");
             info.emulator = metadata.optString("emulator", "");
             info.box64Version = metadata.optString("box64Version", "");
