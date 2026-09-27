@@ -100,7 +100,7 @@ public class ConfigCenterFragment extends Fragment {
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setHasOptionsMenu(true);
+        try { setHasOptionsMenu(true); } catch (Exception ignored) {}
         importLauncher = registerForActivityResult(new ActivityResultContracts.GetContent(), this::onImportConfigPicked);
         importPackageLauncher = registerForActivityResult(new ActivityResultContracts.GetContent(), this::onImportPackagePicked);
     }
@@ -109,63 +109,73 @@ public class ConfigCenterFragment extends Fragment {
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
                              @Nullable Bundle savedInstanceState) {
-        containerManager = new ContainerManager(requireContext());
+        final Context ctx = getContext();
+        if (ctx == null) return new TextView(getActivity());
+        try {
+            int pad = dp(12);
+            LinearLayout root = new LinearLayout(ctx);
+            root.setOrientation(LinearLayout.VERTICAL);
+            root.setBackgroundColor(0xFF0B0D12);
+            root.setPadding(pad, dp(8), pad, pad);
 
-        int pad = dp(12);
-        LinearLayout root = new LinearLayout(requireContext());
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(0xFF0B0D12);
-        root.setPadding(pad, dp(8), pad, pad);
+            // 分类 Tab（使用默认构造函数，避免defStyleAttr=0导致主题属性缺失）
+            TabLayout tabLayout = new TabLayout(ctx);
+            tabLayout.setTabMode(TabLayout.MODE_FIXED);
+            tabLayout.setTabGravity(TabLayout.GRAVITY_FILL);
+            tabLayout.addTab(tabLayout.newTab().setText("全部"));
+            tabLayout.addTab(tabLayout.newTab().setText("本地游戏"));
+            tabLayout.addTab(tabLayout.newTab().setText("Steam游戏"));
+            tabLayout.setSelectedTabIndicatorColor(0xFF4FC3F7);
+            LinearLayout.LayoutParams tabLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            tabLp.bottomMargin = dp(8);
+            root.addView(tabLayout, tabLp);
 
-        // 分类 Tab（使用默认构造函数，避免defStyleAttr=0导致主题属性缺失）
-        TabLayout tabLayout = new TabLayout(requireContext());
-        tabLayout.setTabMode(TabLayout.MODE_FIXED);
-        tabLayout.setTabGravity(TabLayout.GRAVITY_FILL);
-        tabLayout.addTab(tabLayout.newTab().setText("全部"));
-        tabLayout.addTab(tabLayout.newTab().setText("本地游戏"));
-        tabLayout.addTab(tabLayout.newTab().setText("Steam游戏"));
-        tabLayout.setSelectedTabIndicatorColor(0xFF4FC3F7);
-        LinearLayout.LayoutParams tabLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        tabLp.bottomMargin = dp(8);
-        root.addView(tabLayout, tabLp);
+            tabLayout.addOnTabSelectedListener(new TabLayout.OnTabSelectedListener() {
+                @Override public void onTabSelected(TabLayout.Tab tab) {
+                    currentTab = tab.getPosition();
+                    applyFilter();
+                }
+                @Override public void onTabUnselected(TabLayout.Tab tab) {}
+                @Override public void onTabReselected(TabLayout.Tab tab) {}
+            });
 
-        tabLayout.addOnTabSelectedListener(new TabLayout.OnTabSelectedListener() {
-            @Override public void onTabSelected(TabLayout.Tab tab) {
-                currentTab = tab.getPosition();
-                applyFilter();
-            }
-            @Override public void onTabUnselected(TabLayout.Tab tab) {}
-            @Override public void onTabReselected(TabLayout.Tab tab) {}
-        });
+            // 列表 + 空状态
+            FrameLayout content = new FrameLayout(ctx);
+            RecyclerView recyclerView = new RecyclerView(ctx);
+            recyclerView.setLayoutManager(new LinearLayoutManager(ctx));
+            recyclerView.setPadding(0, dp(4), 0, dp(4));
+            adapter = new ConfigAdapter();
+            recyclerView.setAdapter(adapter);
+            content.addView(recyclerView, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        // 列表 + 空状态
-        FrameLayout content = new FrameLayout(requireContext());
-        RecyclerView recyclerView = new RecyclerView(requireContext());
-        recyclerView.setLayoutManager(new LinearLayoutManager(requireContext()));
-        recyclerView.setPadding(0, dp(4), 0, dp(4));
-        adapter = new ConfigAdapter();
-        recyclerView.setAdapter(adapter);
-        content.addView(recyclerView, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            emptyView = new TextView(ctx);
+            emptyView.setText("暂无配置文件\n点击右上角「导入配置文件」添加");
+            emptyView.setGravity(android.view.Gravity.CENTER);
+            emptyView.setTextColor(0xFF8A8F98);
+            emptyView.setTextSize(15);
+            content.addView(emptyView, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        emptyView = new TextView(requireContext());
-        emptyView.setText("暂无配置文件\n点击右上角「导入配置文件」添加");
-        emptyView.setGravity(android.view.Gravity.CENTER);
-        emptyView.setTextColor(0xFF8A8F98);
-        emptyView.setTextSize(15);
-        content.addView(emptyView, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
-        root.addView(content, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        return root;
+            root.addView(content, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+            return root;
+        } catch (Exception e) {
+            TextView err = new TextView(ctx);
+            err.setText("配置中心加载失败，请重试");
+            err.setGravity(android.view.Gravity.CENTER);
+            err.setTextColor(0xFFE6E9EF);
+            err.setTextSize(15);
+            return err;
+        }
     }
 
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
         Activity activity = getActivity();
+        if (activity == null) return;
         if (activity instanceof AppCompatActivity && ((AppCompatActivity) activity).getSupportActionBar() != null) {
             ((AppCompatActivity) activity).getSupportActionBar().setTitle("配置中心");
         }
@@ -434,10 +444,12 @@ public class ConfigCenterFragment extends Fragment {
     // ==================== 详情 / 应用 / 删除 ====================
 
     private void showDetail(ConfigEntry e) {
+        final Context ctx = getContext();
+        if (ctx == null) return;
         try {
             String text = FileUtils.readString(e.file);
             if (text == null) {
-                Toast.makeText(getContext(), "无法读取配置文件", Toast.LENGTH_SHORT).show();
+                Toast.makeText(ctx, "无法读取配置文件", Toast.LENGTH_SHORT).show();
                 return;
             }
             JSONObject json = new JSONObject(text);
@@ -454,15 +466,15 @@ public class ConfigCenterFragment extends Fragment {
             body.append("与默认值对比：\n");
             body.append(diffSummary.isEmpty() ? "  （全部为默认值）" : diffSummary);
 
-            ScrollView sv = new ScrollView(requireContext());
-            TextView tv = new TextView(requireContext());
+            ScrollView sv = new ScrollView(ctx);
+            TextView tv = new TextView(ctx);
             tv.setText(body.toString());
             tv.setTextColor(0xFFE6E9EF);
             tv.setTextSize(13);
             tv.setPadding(dp(20), dp(16), dp(20), dp(16));
             sv.addView(tv);
 
-            new AlertDialog.Builder(requireContext())
+            new AlertDialog.Builder(ctx)
                     .setTitle(e.gameName)
                     .setView(sv)
                     .setPositiveButton("应用到游戏", (d, w) -> pickGameToApply(e))
@@ -470,7 +482,7 @@ public class ConfigCenterFragment extends Fragment {
                     .setNegativeButton("关闭", null)
                     .show();
         } catch (Exception ex) {
-            Toast.makeText(getContext(), "解析配置失败: " + ex.getMessage(), Toast.LENGTH_SHORT).show();
+            Toast.makeText(ctx, "解析配置失败: " + ex.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -504,15 +516,23 @@ public class ConfigCenterFragment extends Fragment {
     }
 
     private void pickGameToApply(ConfigEntry e) {
-        if (containerManager == null) containerManager = new ContainerManager(requireContext());
+        final Context ctx = getContext();
+        if (ctx == null) return;
+        if (containerManager == null) {
+            try { containerManager = new ContainerManager(ctx); }
+            catch (Exception ex) {
+                Toast.makeText(ctx, "容器管理器初始化失败", Toast.LENGTH_SHORT).show();
+                return;
+            }
+        }
         ArrayList<Shortcut> shortcuts = containerManager.loadShortcuts();
         if (shortcuts == null || shortcuts.isEmpty()) {
-            Toast.makeText(getContext(), "没有可用的游戏，请先在游戏库添加游戏", Toast.LENGTH_LONG).show();
+            Toast.makeText(ctx, "没有可用的游戏，请先在游戏库添加游戏", Toast.LENGTH_LONG).show();
             return;
         }
         final CharSequence[] items = new CharSequence[shortcuts.size()];
         for (int i = 0; i < shortcuts.size(); i++) items[i] = shortcuts.get(i).name;
-        new AlertDialog.Builder(requireContext())
+        new AlertDialog.Builder(ctx)
                 .setTitle("选择要应用到的游戏")
                 .setItems(items, (d, which) -> applyConfigToGame(e, shortcuts.get(which)))
                 .show();
@@ -563,15 +583,17 @@ public class ConfigCenterFragment extends Fragment {
     }
 
     private void confirmDelete(ConfigEntry e) {
-        new AlertDialog.Builder(requireContext())
+        final Context ctx = getContext();
+        if (ctx == null) return;
+        new AlertDialog.Builder(ctx)
                 .setTitle("删除配置文件")
                 .setMessage("确定删除「" + e.gameName + "」的配置文件吗？此操作不可恢复。")
                 .setPositiveButton("删除", (d, w) -> {
                     if (e.file.delete()) {
-                        Toast.makeText(getContext(), "已删除", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(ctx, "已删除", Toast.LENGTH_SHORT).show();
                         refreshList();
                     } else {
-                        Toast.makeText(getContext(), "删除失败", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(ctx, "删除失败", Toast.LENGTH_SHORT).show();
                     }
                 })
                 .setNegativeButton("取消", null)
@@ -582,6 +604,8 @@ public class ConfigCenterFragment extends Fragment {
 
     private void onImportConfigPicked(Uri uri) {
         if (uri == null) return;
+        final Context ctx = getContext();
+        if (ctx == null) return;
         executor.execute(() -> {
             try {
                 File localDir = new File(CONFIGS_ROOT, "local");
@@ -589,7 +613,7 @@ public class ConfigCenterFragment extends Fragment {
 
                 // 先读取内容解析 gameName 作为文件名
                 String name = "imported_" + System.currentTimeMillis();
-                try (InputStream is = requireContext().getContentResolver().openInputStream(uri)) {
+                try (InputStream is = ctx.getContentResolver().openInputStream(uri)) {
                     if (is == null) throw new Exception("无法打开所选文件");
                     byte[] data = readAll(is);
                     String text = new String(data, "UTF-8");
@@ -608,12 +632,12 @@ public class ConfigCenterFragment extends Fragment {
                     }
                 }
                 if (getActivity() != null) getActivity().runOnUiThread(() -> {
-                    Toast.makeText(getContext(), "配置导入成功，已保存到配置中心", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(ctx, "配置导入成功，已保存到配置中心", Toast.LENGTH_SHORT).show();
                     refreshList();
                 });
             } catch (Exception ex) {
                 if (getActivity() != null) getActivity().runOnUiThread(() ->
-                        Toast.makeText(getContext(), "导入失败: " + ex.getMessage(), Toast.LENGTH_LONG).show());
+                        Toast.makeText(ctx, "导入失败: " + ex.getMessage(), Toast.LENGTH_LONG).show());
             }
         });
     }
@@ -767,8 +791,10 @@ public class ConfigCenterFragment extends Fragment {
     // ==================== 工具 ====================
 
     private int dp(int v) {
+        Context ctx = getContext();
+        if (ctx == null) return v;
         return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v,
-                getResources().getDisplayMetrics()));
+                ctx.getResources().getDisplayMetrics()));
     }
 
     private static String basename(String fileName) {

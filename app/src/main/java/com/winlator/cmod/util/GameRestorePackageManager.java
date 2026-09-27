@@ -82,6 +82,10 @@ public class GameRestorePackageManager {
         public String graphicsDriver;
         public String graphicsDriverConfig;
         public String audioDriver;
+        public String box64Preset;
+        public String fexcorePreset;
+        public String envVars;
+        public String screenSize;
         // v4：快捷方式信息（仅文件名和目录名，不含本地路径）
         public String executableName;
         public String gameDirName;
@@ -321,7 +325,14 @@ public class GameRestorePackageManager {
                 File srcWineRuntime = new File(tempDir, "wineruntime");
                 File destWineDir = new File(newContainerDir, ".wine");
                 if (srcWineRuntime.exists()) {
-                    copyDirectorySimple(srcWineRuntime, destWineDir);
+                    // v7：保留符号链接复制，避免dosdevices断裂
+                    try {
+                        copyDirectoryPreservingSymlinks(srcWineRuntime, destWineDir);
+                    } catch (Exception e) {
+                        throw new Exception("Wine运行环境还原失败: " + e.getMessage());
+                    }
+                    // v7：修复dosdevices符号链接并设置目录权限
+                    fixWineEnvironment(destWineDir);
                     callback.onProgress(45, "Wine运行环境还原成功");
                 } else {
                     throw new Exception("数据包标记包含Wine运行环境，但未找到wineruntime目录");
@@ -343,6 +354,7 @@ public class GameRestorePackageManager {
             // v3：检查非Wine依赖，缺失时通过onWarning报告
             checkAndReportDependencies(context, metadata, callback);
 
+            // v7：注册表还原在Wine运行环境之后执行（覆盖wine runtime中的注册表，如有）
             if (containsRegistry) {
                 callback.onProgress(55, "导入注册表...");
                 File registryDir = new File(tempDir, "container/registry");
@@ -722,14 +734,40 @@ public class GameRestorePackageManager {
             sb.append("• 模拟器: ").append(info.emulator).append("\n");
         }
 
-        // Box64版本
+        // Box64版本 + 预设
         if (info.box64Version != null && !info.box64Version.isEmpty()) {
-            sb.append("• Box64版本: ").append(info.box64Version).append("\n");
+            sb.append("• Box64版本: ").append(info.box64Version);
+            if (info.box64Preset != null && !info.box64Preset.isEmpty()) {
+                sb.append("（预设: ").append(info.box64Preset).append("）");
+            }
+            sb.append("\n");
         }
 
-        // FEXCore版本
+        // FEXCore版本 + 预设
         if (info.fexcoreVersion != null && !info.fexcoreVersion.isEmpty()) {
-            sb.append("• FEXCore版本: ").append(info.fexcoreVersion).append("\n");
+            sb.append("• FEXCore版本: ").append(info.fexcoreVersion);
+            if (info.fexcorePreset != null && !info.fexcorePreset.isEmpty()) {
+                sb.append("（预设: ").append(info.fexcorePreset).append("）");
+            }
+            sb.append("\n");
+        }
+
+        // 环境变量
+        if (info.envVars != null && !info.envVars.isEmpty()
+                && !info.envVars.equals(Container.DEFAULT_ENV_VARS)) {
+            sb.append("• 环境变量: 已自定义（").append(info.envVars.length()).append("字符）\n");
+        }
+
+        // 屏幕分辨率
+        if (info.screenSize != null && !info.screenSize.isEmpty()
+                && !info.screenSize.equals(Container.DEFAULT_SCREEN_SIZE)) {
+            sb.append("• 屏幕分辨率: ").append(info.screenSize).append("\n");
+        }
+
+        // 音频驱动
+        if (info.audioDriver != null && !info.audioDriver.isEmpty()
+                && !info.audioDriver.equals(Container.DEFAULT_AUDIO_DRIVER)) {
+            sb.append("• 音频驱动: ").append(info.audioDriver).append("\n");
         }
 
         if (sb.length() == 0) {
@@ -831,6 +869,10 @@ public class GameRestorePackageManager {
             info.graphicsDriver = metadata.optString("graphicsDriver", "");
             info.graphicsDriverConfig = metadata.optString("graphicsDriverConfig", "");
             info.audioDriver = metadata.optString("audioDriver", "");
+            info.box64Preset = metadata.optString("box64Preset", "");
+            info.fexcorePreset = metadata.optString("fexcorePreset", "");
+            info.envVars = metadata.optString("envVars", "");
+            info.screenSize = metadata.optString("screenSize", "");
 
             JSONArray components = metadata.optJSONArray("requiredComponents");
             if (components != null) {
@@ -1236,15 +1278,24 @@ public class GameRestorePackageManager {
 
     /**
      * v5：复制Wine运行环境，排除游戏目录（Games）避免重复打包
+     * v7：保留符号链接（dosdevices），排除根目录注册表文件（已单独导出）
      */
     private static void copyWineRuntime(File wineDir, File destDir, ExportCallback callback,
                                          int startProgress, int endProgress) {
         if (!wineDir.isDirectory() || !destDir.exists()) return;
+        // 注册表文件已单独导出到 container/registry/，避免重复
+        final java.util.Set<String> skipRootFiles = new java.util.HashSet<>(
+                java.util.Arrays.asList("system.reg", "user.reg", "userdef.reg"));
         File[] files = wineDir.listFiles();
         if (files == null) return;
         int total = files.length;
         int copied = 0;
         for (File file : files) {
+            // 排除根目录注册表文件
+            if (file.isFile() && skipRootFiles.contains(file.getName())) {
+                copied++;
+                continue;
+            }
             // 排除游戏目录（已在gamefiles/中）
             if (file.isDirectory() && "drive_c".equals(file.getName())) {
                 File destDriveC = new File(destDir, "drive_c");
@@ -1254,19 +1305,19 @@ public class GameRestorePackageManager {
                     for (File subFile : driveCFiles) {
                         if ("Games".equals(subFile.getName())) continue; // 排除游戏目录
                         File destSub = new File(destDriveC, subFile.getName());
-                        if (subFile.isDirectory()) {
-                            copyDirectorySimple(subFile, destSub);
-                        } else {
-                            FileUtils.copy(subFile, destSub);
+                        try {
+                            copyDirectoryPreservingSymlinks(subFile, destSub);
+                        } catch (Exception e) {
+                            // 单个文件复制失败不阻塞整体导出
                         }
                     }
                 }
             } else {
                 File destFile = new File(destDir, file.getName());
-                if (file.isDirectory()) {
-                    copyDirectorySimple(file, destFile);
-                } else {
-                    FileUtils.copy(file, destFile);
+                try {
+                    copyDirectoryPreservingSymlinks(file, destFile);
+                } catch (Exception e) {
+                    // 单个文件复制失败不阻塞整体导出
                 }
             }
             copied++;
@@ -1286,6 +1337,130 @@ public class GameRestorePackageManager {
                 copyDirectorySimple(file, destFile);
             } else {
                 FileUtils.copy(file, destFile);
+            }
+        }
+    }
+
+    /**
+     * v7：复制目录时保留符号链接和文件属性。
+     * 使用 Files.copy + NOFOLLOW_LINKS 确保 dosdevices/c: 等符号链接不被展开为普通文件。
+     */
+    private static void copyDirectoryPreservingSymlinks(File src, File dest) throws java.io.IOException {
+        if (!src.exists()) return;
+        // 符号链接：原样复制链接（不跟随目标）
+        if (Files.isSymbolicLink(src.toPath())) {
+            if (dest.exists()) dest.delete();
+            Files.copy(src.toPath(), dest.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.COPY_ATTRIBUTES,
+                    java.nio.file.StandardCopyOption.NOFOLLOW_LINKS);
+            return;
+        }
+        if (src.isDirectory()) {
+            if (!dest.exists()) dest.mkdirs();
+            // 复制目录属性
+            try {
+                Files.setAttribute(dest.toPath(), "lastModifiedTime",
+                        Files.getLastModifiedTime(src.toPath()));
+            } catch (Exception ignored) {}
+            File[] files = src.listFiles();
+            if (files == null) return;
+            for (File file : files) {
+                File destFile = new File(dest, file.getName());
+                copyDirectoryPreservingSymlinks(file, destFile);
+            }
+        } else {
+            FileUtils.copy(src, dest);
+        }
+    }
+
+    /**
+     * v7：导入Wine运行环境后修复dosdevices符号链接并设置.wine目录权限。
+     * 确保 .wine/dosdevices/c: 指向 ../drive_c，断裂则重建。
+     */
+    private static void fixWineEnvironment(File wineDir) {
+        try {
+            // 确保drive_c存在
+            File driveC = new File(wineDir, "drive_c");
+            if (!driveC.exists()) driveC.mkdirs();
+
+            // 修复dosdevices目录
+            File dosdevices = new File(wineDir, "dosdevices");
+            if (!dosdevices.exists()) dosdevices.mkdirs();
+
+            // 检查c: -> ../drive_c 符号链接
+            File cLink = new File(dosdevices, "c:");
+            boolean cLinkOk = false;
+            try {
+                if (Files.isSymbolicLink(cLink.toPath())) {
+                    java.nio.file.Path target = Files.readSymbolicLink(cLink.toPath());
+                    if ("../drive_c".equals(target.toString())) cLinkOk = true;
+                }
+            } catch (Exception ignored) {}
+            if (!cLinkOk) {
+                if (cLink.exists()) {
+                    // 如果是普通文件或目录（解压后断裂），删除后重建符号链接
+                    deleteRecursiveQuiet(cLink);
+                }
+                try {
+                    Files.createSymbolicLink(cLink.toPath(),
+                            java.nio.file.Paths.get("../drive_c"));
+                } catch (Exception e) {
+                    // 创建符号链接失败时退化为目录
+                    if (!cLink.exists()) cLink.mkdirs();
+                }
+            }
+
+            // 确保d:、e:等必要符号链接存在（指向设备占位）
+            for (String drive : new String[]{"d:", "e:"}) {
+                File link = new File(dosdevices, drive);
+                if (!link.exists() && !Files.isSymbolicLink(link.toPath())) {
+                    // 不强制创建d:/e:，Wine会在首次启动时自动创建
+                }
+            }
+
+            // 设置.wine目录及子目录权限
+            setPermissionsRecursive(wineDir);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static void deleteRecursiveQuiet(File file) {
+        if (file == null || !file.exists()) return;
+        if (Files.isSymbolicLink(file.toPath())) {
+            file.delete();
+            return;
+        }
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children != null) {
+                for (File c : children) deleteRecursiveQuiet(c);
+            }
+        }
+        file.delete();
+    }
+
+    private static void setPermissionsRecursive(File dir) {
+        if (dir == null || !dir.exists()) return;
+        try {
+            dir.setReadable(true, false);
+            dir.setWritable(true, false);
+            dir.setExecutable(true, false);
+        } catch (Exception ignored) {}
+        if (Files.isSymbolicLink(dir.toPath())) return;
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File f : files) {
+            if (Files.isSymbolicLink(f.toPath())) continue;
+            if (f.isDirectory()) {
+                setPermissionsRecursive(f);
+            } else {
+                try {
+                    f.setReadable(true, false);
+                    f.setWritable(true, false);
+                    f.setExecutable(true, false);
+                } catch (Exception ignored) {}
             }
         }
     }

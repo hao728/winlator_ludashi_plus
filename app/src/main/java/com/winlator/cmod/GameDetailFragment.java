@@ -264,6 +264,17 @@ public class GameDetailFragment extends Fragment {
             fileName = fileName.replaceAll("[^a-zA-Z0-9\\u4e00-\\u9fa5._-]", "_");
 
             File destFile = new File(exportDir, fileName);
+
+            // 导出游戏图标：复制到配置同目录，文件名与JSON同名不同后缀（.png）
+            String iconFileName = fileName.substring(0, fileName.length() - ".json".length()) + ".png";
+            if (shortcut.iconFile != null && shortcut.iconFile.isFile()) {
+                try {
+                    File iconDest = new File(exportDir, iconFileName);
+                    com.winlator.cmod.core.FileUtils.copy(shortcut.iconFile, iconDest);
+                    configJson.put("iconFile", iconFileName);
+                } catch (Exception ignored) {}
+            }
+
             com.winlator.cmod.core.FileUtils.writeString(destFile, configJson.toString(2));
             Toast.makeText(context, "容器配置已导出: " + source + "/" + fileName, Toast.LENGTH_LONG).show();
         } catch (Exception e) {
