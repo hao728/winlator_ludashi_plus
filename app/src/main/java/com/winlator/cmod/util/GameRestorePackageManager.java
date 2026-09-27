@@ -1353,7 +1353,7 @@ public class GameRestorePackageManager {
             Files.copy(src.toPath(), dest.toPath(),
                     java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                     java.nio.file.StandardCopyOption.COPY_ATTRIBUTES,
-                    java.nio.file.StandardCopyOption.NOFOLLOW_LINKS);
+                    java.nio.file.LinkOption.NOFOLLOW_LINKS);
             return;
         }
         if (src.isDirectory()) {
