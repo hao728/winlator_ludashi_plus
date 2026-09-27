@@ -209,7 +209,6 @@ public class GameDetailFragment extends Fragment {
         super.onCreateOptionsMenu(menu, inflater);
         menu.add(0, 3001, 0, "导出游戏数据包");
         menu.add(0, 3002, 1, "导出容器配置");
-        menu.add(0, 3003, 2, "导入容器配置");
     }
 
     @Override
@@ -219,9 +218,6 @@ public class GameDetailFragment extends Fragment {
             return true;
         } else if (item.getItemId() == 3002) {
             exportContainerConfig();
-            return true;
-        } else if (item.getItemId() == 3003) {
-            showImportConfigConfirmDialog();
             return true;
         }
         return super.onOptionsItemSelected(item);
@@ -280,34 +276,6 @@ public class GameDetailFragment extends Fragment {
         } catch (Exception e) {
             Toast.makeText(context, "导出失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }
-    }
-
-    /**
-     * v3：导入容器配置前显示确认对话框，说明影响范围
-     */
-    private void showImportConfigConfirmDialog() {
-        final Context context = getContext();
-        if (context == null || shortcut == null || shortcut.container == null) return;
-
-        new AlertDialog.Builder(context)
-                .setTitle("导入容器配置")
-                .setMessage("将覆盖当前容器（" + shortcut.container.getName() + "）的配置：\n" +
-                        "• Wine版本\n" +
-                        "• 图形驱动 / DXWrapper\n" +
-                        "• 组件 / 模拟器设置\n\n" +
-                        "注意：此操作不影响快捷方式文件。配置将在下次启动该游戏时生效。")
-                .setPositiveButton("选择配置文件", (dialog, which) -> {
-                    Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-                    intent.setType("application/json");
-                    intent.addCategory(Intent.CATEGORY_OPENABLE);
-                    try {
-                        startActivityForResult(Intent.createChooser(intent, "选择容器配置文件"), 9002);
-                    } catch (Exception e) {
-                        Toast.makeText(context, "无法打开文件选择器", Toast.LENGTH_SHORT).show();
-                    }
-                })
-                .setNegativeButton("取消", null)
-                .show();
     }
 
     /**
@@ -408,38 +376,6 @@ public class GameDetailFragment extends Fragment {
         if (bytes < 1024 * 1024) return String.format(java.util.Locale.US, "%.1f KB", bytes / 1024.0);
         if (bytes < 1024 * 1024 * 1024) return String.format(java.util.Locale.US, "%.1f MB", bytes / (1024.0 * 1024));
         return String.format(java.util.Locale.US, "%.2f GB", bytes / (1024.0 * 1024 * 1024));
-    }
-
-    @Override
-    public void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == 9002 && resultCode == android.app.Activity.RESULT_OK && data != null) {
-            android.net.Uri uri = data.getData();
-            if (uri != null && shortcut != null && shortcut.container != null) {
-                try {
-                    java.io.File tempFile = new java.io.File(getContext().getCacheDir(), "import_config.json");
-                    try (java.io.InputStream is = getContext().getContentResolver().openInputStream(uri);
-                         java.io.FileOutputStream os = new java.io.FileOutputStream(tempFile)) {
-                        byte[] buffer = new byte[8192];
-                        int len;
-                        while ((len = is.read(buffer)) > 0) os.write(buffer, 0, len);
-                    }
-
-                    // v2修复：通过loadData/saveData正确导入，不再raw copy
-                    String configContent = FileUtils.readString(tempFile);
-                    JSONObject importedConfig = new JSONObject(configContent);
-                    importedConfig.put("id", shortcut.container.id);
-                    shortcut.container.loadData(importedConfig);
-                    shortcut.container.saveData();
-
-                    tempFile.delete();
-                    // v3：提示改为"下次启动该游戏时生效"
-                    Toast.makeText(getContext(), "容器配置已导入，下次启动该游戏时生效", Toast.LENGTH_LONG).show();
-                } catch (Exception e) {
-                    Toast.makeText(getContext(), "导入失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
-                }
-            }
-        }
     }
 
     /**

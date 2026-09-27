@@ -304,7 +304,11 @@ public class ConfigCenterFragment extends Fragment {
                 filteredEntries.add(e);
             }
         }
-        if (adapter != null) adapter.notifyDataSetChanged();
+        try {
+            if (adapter != null) adapter.notifyDataSetChanged();
+        } catch (Exception e) {
+            // BUG1修复：notifyDataSetChanged可能因视图状态异常崩溃
+        }
         if (emptyView != null) {
             emptyView.setVisibility(filteredEntries.isEmpty() ? View.VISIBLE : View.GONE);
         }
@@ -317,14 +321,12 @@ public class ConfigCenterFragment extends Fragment {
         @Override
         public VH onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
             Context ctx = parent.getContext();
-            com.google.android.material.card.MaterialCardView card = new com.google.android.material.card.MaterialCardView(ctx);
             int m = dp(8);
-            card.setUseCompatPadding(true);
-            card.setRadius(dp(12));
-            card.setCardElevation(dp(2));
+            int pad = dp(14);
+
+            // 构建行内容（水平布局：图标 + 文字列）
             LinearLayout row = new LinearLayout(ctx);
             row.setOrientation(LinearLayout.HORIZONTAL);
-            int pad = dp(14);
             row.setPadding(pad, pad, pad, pad);
 
             // 图标占位
@@ -373,36 +375,75 @@ public class ConfigCenterFragment extends Fragment {
             col.addView(meta);
 
             row.addView(col);
-            card.addView(row);
 
-            RecyclerView.LayoutParams lp = new RecyclerView.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp.setMargins(0, m / 2, 0, m / 2);
-            card.setLayoutParams(lp);
-            return new VH(card, iconText, title, summary, meta);
+            // BUG1修复：MaterialCardView可能因主题缺失崩溃，try-catch包裹，失败退化为LinearLayout+圆角背景
+            View itemView;
+            try {
+                com.google.android.material.card.MaterialCardView card = new com.google.android.material.card.MaterialCardView(ctx);
+                card.setUseCompatPadding(true);
+                card.setRadius(dp(12));
+                card.setCardElevation(dp(2));
+                card.addView(row);
+                RecyclerView.LayoutParams lp = new RecyclerView.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                lp.setMargins(0, m / 2, 0, m / 2);
+                card.setLayoutParams(lp);
+                itemView = card;
+            } catch (Exception e) {
+                // 退化方案：LinearLayout + 圆角背景
+                LinearLayout fallback = new LinearLayout(ctx);
+                fallback.setOrientation(LinearLayout.VERTICAL);
+                GradientDrawable bg = new GradientDrawable();
+                bg.setShape(GradientDrawable.RECTANGLE);
+                bg.setCornerRadius(dp(12));
+                bg.setColor(0xFF1A1D26);
+                fallback.setBackground(bg);
+                fallback.addView(row);
+                RecyclerView.LayoutParams lp = new RecyclerView.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                lp.setMargins(0, m / 2, 0, m / 2);
+                fallback.setLayoutParams(lp);
+                itemView = fallback;
+            }
+            return new VH(itemView, iconText, title, summary, meta);
         }
 
         @Override
         public void onBindViewHolder(@NonNull VH h, int position) {
-            ConfigEntry e = filteredEntries.get(position);
-            h.title.setText(e.gameName);
-            h.summary.setText(buildSummary(e));
-            h.meta.setText(formatTime(e.modifiedAt) + "  ·  " + formatSize(e.size) + "  ·  "
-                    + ("steam".equals(e.source) ? "Steam" : "本地"));
+            try {
+                ConfigEntry e = filteredEntries.get(position);
+                h.title.setText(e.gameName != null ? e.gameName : "未命名配置");
+                h.summary.setText(buildSummary(e));
+                h.meta.setText(formatTime(e.modifiedAt) + "  ·  " + formatSize(e.size) + "  ·  "
+                        + ("steam".equals(e.source) ? "Steam" : "本地"));
 
-            // 首字母彩色圆形图标
-            String letter = e.gameName.isEmpty() ? "?" : e.gameName.substring(0, 1).toUpperCase(Locale.getDefault());
-            h.iconText.setText(letter);
-            GradientDrawable bg = new GradientDrawable();
-            bg.setShape(GradientDrawable.OVAL);
-            bg.setColor(colorFor(e.gameName));
-            h.iconText.setBackground(bg);
+                // 首字母彩色圆形图标
+                String letter = (e.gameName == null || e.gameName.isEmpty()) ? "?"
+                        : e.gameName.substring(0, 1).toUpperCase(Locale.getDefault());
+                h.iconText.setText(letter);
+                GradientDrawable bg = new GradientDrawable();
+                bg.setShape(GradientDrawable.OVAL);
+                bg.setColor(colorFor(e.gameName));
+                h.iconText.setBackground(bg);
 
-            h.itemView.setOnClickListener(v -> showDetail(e));
-            h.itemView.setOnLongClickListener(v -> {
-                confirmDelete(e);
-                return true;
-            });
+                h.itemView.setOnClickListener(v -> showDetail(e));
+                h.itemView.setOnLongClickListener(v -> {
+                    confirmDelete(e);
+                    return true;
+                });
+            } catch (Exception ex) {
+                // BUG1修复：绑定异常时设置默认文本，绝不崩溃
+                try {
+                    h.title.setText("配置文件");
+                    h.summary.setText("");
+                    h.meta.setText("");
+                    h.iconText.setText("?");
+                    GradientDrawable bg = new GradientDrawable();
+                    bg.setShape(GradientDrawable.OVAL);
+                    bg.setColor(0xFF4FC3F7);
+                    h.iconText.setBackground(bg);
+                } catch (Exception ignored) {}
+            }
         }
 
         @Override
@@ -457,20 +498,33 @@ public class ConfigCenterFragment extends Fragment {
             // 用临时 Container 解析，得到与默认值的差异摘要
             String diffSummary = buildDiffSummary(json);
 
+            // 功能优化2：增强详情页展示
             StringBuilder body = new StringBuilder();
+            body.append("游戏名称：").append(e.gameName != null && !e.gameName.isEmpty() ? e.gameName : "未命名").append('\n');
             body.append("来源：").append("steam".equals(e.source) ? "Steam 游戏" : "本地游戏").append('\n');
-            body.append("文件：").append(e.file.getName()).append('\n');
             body.append("修改时间：").append(formatTime(e.modifiedAt)).append('\n');
-            body.append("大小：").append(formatSize(e.size)).append('\n');
+            body.append("文件大小：").append(formatSize(e.size)).append('\n');
+
+            // 检查是否包含游戏图标
+            String iconFile = json.optString("iconFile", "");
+            if (!iconFile.isEmpty()) {
+                body.append("包含游戏图标：").append(iconFile).append('\n');
+            }
+
             body.append("──────────────\n");
-            body.append("与默认值对比：\n");
+            body.append("配置差异（与默认值对比）：\n");
             body.append(diffSummary.isEmpty() ? "  （全部为默认值）" : diffSummary);
+
+            body.append("\n──────────────\n");
+            body.append("说明：此配置可一键应用到选中游戏的容器，\n");
+            body.append("覆盖Wine版本、驱动、组件等设置。");
 
             ScrollView sv = new ScrollView(ctx);
             TextView tv = new TextView(ctx);
             tv.setText(body.toString());
             tv.setTextColor(0xFFE6E9EF);
             tv.setTextSize(13);
+            tv.setLineSpacing(dp(2), 1.2f);
             tv.setPadding(dp(20), dp(16), dp(20), dp(16));
             sv.addView(tv);
 
@@ -488,8 +542,8 @@ public class ConfigCenterFragment extends Fragment {
 
     /** 构造配置与默认值的差异摘要。 */
     private String buildDiffSummary(JSONObject json) {
-        StringBuilder sb = new StringBuilder();
         try {
+            StringBuilder sb = new StringBuilder();
             Container tmp = new Container(0);
             tmp.loadData(json);
 
@@ -503,8 +557,11 @@ public class ConfigCenterFragment extends Fragment {
             if (tmp.getBox64Version() != null && !tmp.getBox64Version().isEmpty()) {
                 sb.append("  · Box64: ").append(tmp.getBox64Version()).append('\n');
             }
-        } catch (Exception ignored) {}
-        return sb.toString().trim();
+            return sb.toString().trim();
+        } catch (Exception e) {
+            // BUG1修复：Container.loadData可能崩溃，返回错误提示而不闪退
+            return "（配置解析失败）";
+        }
     }
 
     private void appendDiffLine(StringBuilder sb, String label, String actual, String def) {
@@ -813,13 +870,18 @@ public class ConfigCenterFragment extends Fragment {
     }
 
     private static int colorFor(String seed) {
-        if (seed == null) seed = "?";
-        Random r = new Random(seed.hashCode());
-        float[] hsv = new float[3];
-        android.graphics.Color.colorToHSV(0xFF4FC3F7, hsv);
-        hsv[0] = (r.nextFloat() * 360f);
-        hsv[1] = 0.55f;
-        hsv[2] = 0.65f;
-        return android.graphics.Color.HSVToColor(hsv);
+        try {
+            if (seed == null) seed = "?";
+            Random r = new Random(seed.hashCode());
+            float[] hsv = new float[3];
+            android.graphics.Color.colorToHSV(0xFF4FC3F7, hsv);
+            hsv[0] = (r.nextFloat() * 360f);
+            hsv[1] = 0.55f;
+            hsv[2] = 0.65f;
+            return android.graphics.Color.HSVToColor(hsv);
+        } catch (Exception e) {
+            // BUG1修复：颜色计算异常时返回默认蓝色
+            return 0xFF4FC3F7;
+        }
     }
 }

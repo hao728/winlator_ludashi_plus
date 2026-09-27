@@ -35,7 +35,6 @@ interface LibraryCallbacks {
     fun onOpen(shortcutPath: String)
     fun onRun(shortcutPath: String)
     fun onAddLocal()
-    fun onImportPackage()
     fun onOpenStore(store: String)
     fun onGridViewChanged(gridView: Boolean)
     fun onAction(shortcutPath: String, action: String)
