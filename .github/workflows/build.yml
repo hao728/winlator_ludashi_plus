@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - 4.1
+      - ludashi-plus/4.1
 permissions:
   contents: write
 
@@ -68,6 +69,24 @@ jobs:
 
       - name: Build with Gradle
         run: ./gradlew assembleRelease --stacktrace --info
+
+      - name: Verify APK signature
+        run: |
+          set -e
+          APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
+          echo "APK: $APK_PATH"
+          ls -lh "$APK_PATH"
+          # 检查APK是否包含META-INF签名文件
+          if unzip -l "$APK_PATH" | grep -q "META-INF/.*\.RSA\|META-INF/.*\.DSA\|META-INF/.*\.EC"; then
+            echo "✅ APK已签名"
+            unzip -l "$APK_PATH" | grep "META-INF/"
+          else
+            echo "❌ APK未签名！"
+            exit 1
+          fi
+          # 用keytool验证签名证书
+          CERT=$(unzip -p "$APK_PATH" META-INF/*.RSA 2>/dev/null | keytool -printcert 2>/dev/null | grep "Owner:" || true)
+          echo "签名证书: $CERT"
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
