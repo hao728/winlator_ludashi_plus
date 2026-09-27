@@ -1,6 +1,7 @@
 package com.winlator.cmod;
 
 import android.app.Activity;
+import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
@@ -37,6 +38,7 @@ import com.winlator.cmod.container.ContainerManager;
 import com.winlator.cmod.container.Shortcut;
 import com.winlator.cmod.core.FileUtils;
 import com.winlator.cmod.core.WineInfo;
+import com.winlator.cmod.util.GameRestorePackageManager;
 
 import org.json.JSONObject;
 
@@ -76,6 +78,7 @@ public class ConfigCenterFragment extends Fragment {
     private TextView emptyView;
     private int currentTab = TAB_ALL;
     private ActivityResultLauncher<String> importLauncher;
+    private ActivityResultLauncher<String> importPackageLauncher;
 
     /** 一条配置文件的解析结果。 */
     private static class ConfigEntry {
@@ -99,6 +102,7 @@ public class ConfigCenterFragment extends Fragment {
         super.onCreate(savedInstanceState);
         setHasOptionsMenu(true);
         importLauncher = registerForActivityResult(new ActivityResultContracts.GetContent(), this::onImportConfigPicked);
+        importPackageLauncher = registerForActivityResult(new ActivityResultContracts.GetContent(), this::onImportPackagePicked);
     }
 
     @Nullable
@@ -113,8 +117,8 @@ public class ConfigCenterFragment extends Fragment {
         root.setBackgroundColor(0xFF0B0D12);
         root.setPadding(pad, dp(8), pad, pad);
 
-        // 分类 Tab
-        TabLayout tabLayout = new TabLayout(requireContext(), null, 0);
+        // 分类 Tab（使用默认构造函数，避免defStyleAttr=0导致主题属性缺失）
+        TabLayout tabLayout = new TabLayout(requireContext());
         tabLayout.setTabMode(TabLayout.MODE_FIXED);
         tabLayout.setTabGravity(TabLayout.GRAVITY_FILL);
         tabLayout.addTab(tabLayout.newTab().setText("全部"));
@@ -177,13 +181,24 @@ public class ConfigCenterFragment extends Fragment {
     @Override
     public void onCreateOptionsMenu(@NonNull Menu menu, @NonNull MenuInflater inflater) {
         super.onCreateOptionsMenu(menu, inflater);
-        MenuItem importItem = menu.add(0, 101, 0, "导入配置文件");
+        MenuItem importPkgItem = menu.add(0, 100, 0, "导入游戏数据包");
+        importPkgItem.setIcon(android.R.drawable.ic_menu_save);
+        importPkgItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
+        MenuItem importItem = menu.add(0, 101, 1, "导入配置文件");
         importItem.setIcon(android.R.drawable.ic_menu_upload);
         importItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
     }
 
     @Override
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
+        if (item.getItemId() == 100) {
+            try {
+                importPackageLauncher.launch("*/*");
+            } catch (Exception e) {
+                Toast.makeText(getContext(), "无法打开文件选择器", Toast.LENGTH_SHORT).show();
+            }
+            return true;
+        }
         if (item.getItemId() == 101) {
             try {
                 importLauncher.launch("application/json");
@@ -593,7 +608,7 @@ public class ConfigCenterFragment extends Fragment {
                     }
                 }
                 if (getActivity() != null) getActivity().runOnUiThread(() -> {
-                    Toast.makeText(getContext(), "导入成功", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(getContext(), "配置导入成功，已保存到配置中心", Toast.LENGTH_SHORT).show();
                     refreshList();
                 });
             } catch (Exception ex) {
@@ -601,6 +616,130 @@ public class ConfigCenterFragment extends Fragment {
                         Toast.makeText(getContext(), "导入失败: " + ex.getMessage(), Toast.LENGTH_LONG).show());
             }
         });
+    }
+
+    /** 导入游戏数据包（.grp.zip） */
+    private void onImportPackagePicked(Uri uri) {
+        if (uri == null) return;
+        final Context ctx = getContext();
+        if (ctx == null) return;
+
+        try {
+            final File tempFile = new File(ctx.getCacheDir(), "import_" + System.currentTimeMillis() + ".grp.zip");
+            try (InputStream is = ctx.getContentResolver().openInputStream(uri);
+                 java.io.FileOutputStream os = new java.io.FileOutputStream(tempFile)) {
+                byte[] buffer = new byte[8192];
+                int len;
+                while ((len = is.read(buffer)) > 0) {
+                    os.write(buffer, 0, len);
+                }
+            }
+
+            // 解析数据包信息
+            final GameRestorePackageManager.PackageInfo pkgInfo = GameRestorePackageManager.parsePackageInfo(tempFile);
+            if (pkgInfo == null) {
+                Toast.makeText(ctx, "无法解析数据包，请确认文件格式正确", Toast.LENGTH_LONG).show();
+                tempFile.delete();
+                return;
+            }
+
+            // 检查Wine依赖
+            final boolean wineInstalled = pkgInfo.containsWineRuntime ||
+                    GameRestorePackageManager.isWineVersionInstalled(ctx, pkgInfo.wineVersion);
+
+            if (!wineInstalled && !pkgInfo.containsWineRuntime) {
+                new AlertDialog.Builder(ctx)
+                        .setTitle("无法导入")
+                        .setMessage("数据包需要Wine版本：" + pkgInfo.wineVersion + "\n\n" +
+                                "当前未安装该版本。\n\n" +
+                                "请先在「设置 → 组件管理」中安装 " + pkgInfo.wineVersion + " 后再导入此数据包。")
+                        .setPositiveButton("确定", (dialog, which) -> tempFile.delete())
+                        .setCancelable(false)
+                        .show();
+                return;
+            }
+
+            // 信息确认对话框
+            StringBuilder infoMsg = new StringBuilder();
+            infoMsg.append("━━━ 游戏信息 ━━━\n");
+            infoMsg.append("游戏名称: ").append(pkgInfo.gameName).append("\n");
+            if (pkgInfo.executableName != null && !pkgInfo.executableName.isEmpty()) {
+                infoMsg.append("exe文件: ").append(pkgInfo.executableName).append("\n");
+            }
+            infoMsg.append("包含游戏文件: ").append(pkgInfo.containsGameFiles ? "是" : "否（仅配置）").append("\n");
+            if (pkgInfo.containsWineRuntime) {
+                infoMsg.append("包含Wine运行环境: 是 ✓\n");
+            }
+            if (pkgInfo.hasShortcutConfig) {
+                infoMsg.append("包含快捷方式独立配置: 是 ✓\n");
+            }
+            infoMsg.append("\n是否确认导入？");
+
+            new AlertDialog.Builder(ctx)
+                    .setTitle("确认导入游戏数据包")
+                    .setMessage(infoMsg.toString())
+                    .setPositiveButton("确认导入", (dialog, which) -> startPackageImport(ctx, tempFile))
+                    .setNegativeButton("取消", (dialog, which) -> tempFile.delete())
+                    .show();
+
+        } catch (Exception e) {
+            Toast.makeText(ctx, "导入失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private ProgressDialog importProgressDialog;
+
+    private void startPackageImport(final Context ctx, final File tempFile) {
+        importProgressDialog = new ProgressDialog(ctx);
+        importProgressDialog.setTitle("正在导入游戏数据包");
+        importProgressDialog.setMessage("准备中...");
+        importProgressDialog.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
+        importProgressDialog.setMax(100);
+        importProgressDialog.setCancelable(false);
+        importProgressDialog.show();
+
+        GameRestorePackageManager.importPackageAsync(ctx, tempFile,
+                new GameRestorePackageManager.ImportCallback() {
+                    @Override
+                    public void onProgress(int percent, String message) {
+                        if (getActivity() != null) {
+                            getActivity().runOnUiThread(() -> {
+                                if (importProgressDialog != null && importProgressDialog.isShowing()) {
+                                    importProgressDialog.setProgress(percent);
+                                    importProgressDialog.setMessage(message);
+                                }
+                            });
+                        }
+                    }
+
+                    @Override
+                    public void onComplete(int containerId, String shortcutName) {
+                        if (getActivity() != null) {
+                            getActivity().runOnUiThread(() -> {
+                                if (importProgressDialog != null && importProgressDialog.isShowing()) {
+                                    importProgressDialog.dismiss();
+                                }
+                                importProgressDialog = null;
+                                Toast.makeText(ctx, "导入成功！游戏：" + shortcutName, Toast.LENGTH_LONG).show();
+                                tempFile.delete();
+                            });
+                        }
+                    }
+
+                    @Override
+                    public void onError(String message) {
+                        if (getActivity() != null) {
+                            getActivity().runOnUiThread(() -> {
+                                if (importProgressDialog != null && importProgressDialog.isShowing()) {
+                                    importProgressDialog.dismiss();
+                                }
+                                importProgressDialog = null;
+                                Toast.makeText(ctx, "导入失败: " + message, Toast.LENGTH_LONG).show();
+                                tempFile.delete();
+                            });
+                        }
+                    }
+                });
     }
 
     private static byte[] readAll(InputStream is) throws java.io.IOException {

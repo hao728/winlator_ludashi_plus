@@ -89,14 +89,15 @@ public class Shortcut {
             File externalStorage = Environment.getExternalStorageDirectory();
             File customIconsDir = new File(externalStorage, "Winlator/icons");
             String baseName = FileUtils.getBasename(file.getPath());
+            // 只有用户明确设置的 .user.png 才覆盖游戏原有图标
+            // 普通的 .png 可能是自动生成的缓存，不应覆盖
             File userIcon = new File(customIconsDir, baseName + ".user.png");
-            File customIcon = userIcon.isFile() ? userIcon : new File(customIconsDir, baseName + ".png");
 
-            if (customIcon.isFile()) {
-                Bitmap customBitmap = BitmapFactory.decodeFile(customIcon.getAbsolutePath());
+            if (userIcon.isFile()) {
+                Bitmap customBitmap = BitmapFactory.decodeFile(userIcon.getAbsolutePath());
                 if (customBitmap != null) {
                     icon = customBitmap;
-                    iconFile = customIcon;
+                    iconFile = userIcon;
                 }
             }
         } catch (Exception e) {}
