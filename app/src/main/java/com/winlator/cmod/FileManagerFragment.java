@@ -1303,4 +1303,8 @@ public class FileManagerFragment extends Fragment {
         int z = (63 - Long.numberOfLeadingZeros(size)) / 10;
         return String.format(Locale.getDefault(), "%.1f %sB", (double) size / (1L << (z * 10)), " KMGTPE".charAt(z));
     }
+
+
+
+
 }

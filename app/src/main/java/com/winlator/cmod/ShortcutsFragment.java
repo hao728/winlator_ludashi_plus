@@ -4,6 +4,7 @@ import static androidx.core.content.ContextCompat.getSystemService;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -62,6 +63,7 @@ import com.winlator.cmod.ui.library.LibraryComposeBinding;
 import com.winlator.cmod.ui.library.LibraryComposeController;
 import com.winlator.cmod.ui.library.LibraryComposeHost;
 import com.winlator.cmod.ui.library.LibraryItem;
+import com.winlator.cmod.util.GameRestorePackageManager;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -154,6 +156,10 @@ public class ShortcutsFragment extends Fragment {
     private ActivityResultLauncher<String> contentPickerLauncher;
     private com.winlator.cmod.core.Callback<Uri> pendingContentPickerCallback;
 
+    // v3：导入进度对话框和警告收集
+    private ProgressDialog importProgressDialog;
+    private final ArrayList<String> importWarnings = new ArrayList<>();
+
     public static final int IMPORT_SHORTCUT = 1005;
 
     @Override
@@ -231,6 +237,11 @@ public class ShortcutsFragment extends Fragment {
                     @Override
                     public void onAddLocal() {
                         openLocalGames();
+                    }
+
+                    @Override
+                    public void onImportPackage() {
+                        showImportPackageDialog();
                     }
 
                     @Override
@@ -1103,4 +1114,231 @@ public class ShortcutsFragment extends Fragment {
             }
         } catch (Exception e) {}
     }
+
+    private void showImportPackageDialog() {
+        final android.content.Context context = getContext();
+        if (context == null) return;
+
+        android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_GET_CONTENT);
+        intent.setType("application/zip");
+        intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+        try {
+            startActivityForResult(android.content.Intent.createChooser(intent, "选择游戏数据包"), 9001);
+        } catch (Exception e) {
+            android.widget.Toast.makeText(context, "无法打开文件选择器", android.widget.Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == 9001 && resultCode == android.app.Activity.RESULT_OK && data != null) {
+            android.net.Uri uri = data.getData();
+            if (uri != null) {
+                importPackageFromUri(uri);
+            }
+        }
+    }
+
+    /**
+     * v3：导入流程重写
+     * 1. 复制文件到临时目录
+     * 2. 解析metadata，检查Wine版本是否已安装
+     * 3. 未安装Wine：明确提示，不继续
+     * 4. 已安装：显示信息卡确认对话框
+     * 5. 用户确认后显示ProgressDialog开始导入
+     * 6. 导入完成后显示依赖警告
+     */
+    private void importPackageFromUri(android.net.Uri uri) {
+        final android.content.Context context = getContext();
+        if (context == null) return;
+
+        try {
+            final java.io.File tempFile = new java.io.File(context.getCacheDir(), "import_" + System.currentTimeMillis() + ".grp.zip");
+            try (java.io.InputStream is = context.getContentResolver().openInputStream(uri);
+                 java.io.FileOutputStream os = new java.io.FileOutputStream(tempFile)) {
+                byte[] buffer = new byte[8192];
+                int len;
+                while ((len = is.read(buffer)) > 0) {
+                    os.write(buffer, 0, len);
+                }
+            }
+
+            // v3：先解析数据包信息
+            final GameRestorePackageManager.PackageInfo pkgInfo = GameRestorePackageManager.parsePackageInfo(tempFile);
+            if (pkgInfo == null) {
+                android.widget.Toast.makeText(context, "无法解析数据包，请确认文件格式正确", android.widget.Toast.LENGTH_LONG).show();
+                tempFile.delete();
+                return;
+            }
+
+            // v5：如果数据包包含Wine运行环境，则不需要预先安装Wine
+            final boolean wineInstalled = pkgInfo.containsWineRuntime ||
+                    GameRestorePackageManager.isWineVersionInstalled(context, pkgInfo.wineVersion);
+
+            if (!wineInstalled && !pkgInfo.containsWineRuntime) {
+                // Wine未安装且数据包不含Wine运行环境：明确提示，不继续导入
+                new AlertDialog.Builder(context)
+                        .setTitle("无法导入")
+                        .setMessage("数据包需要Wine版本：" + pkgInfo.wineVersion + "\n\n" +
+                                "当前未安装该版本。\n\n" +
+                                "请先在「设置 → 组件管理」中安装 " + pkgInfo.wineVersion + " 后再导入此数据包。")
+                        .setPositiveButton("确定", (dialog, which) -> tempFile.delete())
+                        .setCancelable(false)
+                        .show();
+                return;
+            }
+
+            // v4：增强版信息卡确认对话框（隐私保护：不显示任何本地路径）
+            StringBuilder infoMsg = new StringBuilder();
+
+            // ━━━ 游戏信息 ━━━
+            infoMsg.append("━━━ 游戏信息 ━━━\n");
+            infoMsg.append("游戏名称: ").append(pkgInfo.gameName).append("\n");
+            if (pkgInfo.executableName != null && !pkgInfo.executableName.isEmpty()) {
+                infoMsg.append("exe文件: ").append(pkgInfo.executableName).append("\n");
+            }
+            if (pkgInfo.gameDirName != null && !pkgInfo.gameDirName.isEmpty()) {
+                infoMsg.append("游戏目录: ").append(pkgInfo.gameDirName).append("\n");
+            }
+            infoMsg.append("包含游戏文件: ").append(pkgInfo.containsGameFiles ? "是" : "否（仅配置）").append("\n");
+            infoMsg.append("包含注册表: ").append(pkgInfo.containsRegistry ? "是" : "否").append("\n");
+            if (pkgInfo.containsWineRuntime) {
+                infoMsg.append("包含Wine运行环境: 是 ✓（无需预先安装Wine）\n");
+            } else {
+                infoMsg.append("包含Wine运行环境: 否（需已安装Wine版本）\n");
+            }
+            infoMsg.append("数据包大小: ").append(formatPackageSize(pkgInfo.packageSize)).append("\n");
+
+            // ━━━ 容器配置（与默认值对比，含依赖检查）━━━
+            infoMsg.append("\n━━━ 容器配置（与默认值对比）━━━\n");
+            String configDiff = GameRestorePackageManager.getConfigDiffFromMetadata(pkgInfo, context);
+            infoMsg.append(configDiff);
+
+            // ━━━ 将执行的操作 ━━━
+            infoMsg.append("\n━━━ 将执行的操作 ━━━\n");
+            infoMsg.append("✓ 创建新容器（名称: ").append(pkgInfo.gameName).append(" Container）\n");
+            if (pkgInfo.containsWineRuntime) {
+                infoMsg.append("✓ 还原Wine运行环境（数据包内置，无需预先安装）\n");
+            }
+            infoMsg.append("✓ 还原容器配置（Wine版本、驱动、组件等）\n");
+            if (pkgInfo.containsGameFiles) {
+                infoMsg.append("✓ 导入游戏文件到容器内\n");
+            }
+            if (pkgInfo.containsRegistry) {
+                infoMsg.append("✓ 还原注册表\n");
+            }
+            infoMsg.append("✓ 创建游戏快捷方式\n");
+
+            // ━━━ 依赖警告 ━━━
+            boolean hasMissingDeps = configDiff.contains("✗") || configDiff.contains("⚠");
+            if (hasMissingDeps) {
+                infoMsg.append("\n⚠ 注意: 部分依赖可能未安装，导入后游戏可能无法正常运行。\n");
+                infoMsg.append("建议导入后在容器设置中确认图形驱动和DXWrapper配置。\n");
+            }
+
+            infoMsg.append("\n是否确认导入？");
+
+            AlertDialog.Builder importBuilder = new AlertDialog.Builder(context)
+                    .setTitle("确认导入游戏数据包")
+                    .setMessage(infoMsg.toString())
+                    .setPositiveButton("确认导入", (dialog, which) -> startImportWithProgress(context, tempFile))
+                    .setNegativeButton("取消", (dialog, which) -> tempFile.delete());
+
+            if (hasMissingDeps) {
+                importBuilder.setIcon(android.R.drawable.ic_dialog_alert);
+            }
+            importBuilder.show();
+
+        } catch (Exception e) {
+            android.widget.Toast.makeText(context, "导入失败: " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+        }
+    }
+
+    /**
+     * v3：显示ProgressDialog并执行导入
+     */
+    private void startImportWithProgress(final android.content.Context context, final java.io.File tempFile) {
+        importWarnings.clear();
+
+        importProgressDialog = new ProgressDialog(context);
+        importProgressDialog.setTitle("正在导入游戏数据包");
+        importProgressDialog.setMessage("准备中...");
+        importProgressDialog.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
+        importProgressDialog.setMax(100);
+        importProgressDialog.setCancelable(false);
+        importProgressDialog.show();
+
+        GameRestorePackageManager.importPackageAsync(context, tempFile,
+                new GameRestorePackageManager.ImportCallback() {
+                    @Override
+                    public void onProgress(int percent, String message) {
+                        if (getActivity() != null) {
+                            getActivity().runOnUiThread(() -> {
+                                if (importProgressDialog != null && importProgressDialog.isShowing()) {
+                                    importProgressDialog.setProgress(percent);
+                                    importProgressDialog.setMessage(message);
+                                }
+                            });
+                        }
+                    }
+
+                    @Override
+                    public void onComplete(int containerId, String shortcutName) {
+                        if (getActivity() != null) {
+                            getActivity().runOnUiThread(() -> {
+                                if (importProgressDialog != null && importProgressDialog.isShowing()) {
+                                    importProgressDialog.dismiss();
+                                }
+
+                                // v3：显示导入结果+依赖警告
+                                StringBuilder resultMsg = new StringBuilder();
+                                resultMsg.append("导入完成！\n新容器ID: ").append(containerId);
+                                if (!importWarnings.isEmpty()) {
+                                    resultMsg.append("\n\n⚠ 依赖提示:\n");
+                                    for (String warning : importWarnings) {
+                                        resultMsg.append("• ").append(warning).append("\n");
+                                    }
+                                }
+
+                                new AlertDialog.Builder(context)
+                                        .setTitle("导入成功")
+                                        .setMessage(resultMsg.toString())
+                                        .setPositiveButton("确定", null)
+                                        .show();
+
+                                // 刷新游戏库列表
+                                loadShortcutsList();
+                            });
+                        }
+                        tempFile.delete();
+                    }
+
+                    @Override
+                    public void onError(String error) {
+                        if (getActivity() != null) {
+                            getActivity().runOnUiThread(() -> {
+                                if (importProgressDialog != null && importProgressDialog.isShowing()) {
+                                    importProgressDialog.dismiss();
+                                }
+                                android.widget.Toast.makeText(context, "导入失败: " + error, android.widget.Toast.LENGTH_LONG).show();
+                            });
+                        }
+                        tempFile.delete();
+                    }
+
+                    @Override
+                    public void onWarning(String warning) {
+                        importWarnings.add(warning);
+                    }
+                });
+    }
+
+    private String formatPackageSize(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return String.format(java.util.Locale.US, "%.1f KB", bytes / 1024.0);
+        if (bytes < 1024 * 1024 * 1024) return String.format(java.util.Locale.US, "%.1f MB", bytes / (1024.0 * 1024));
+        return String.format(java.util.Locale.US, "%.2f GB", bytes / (1024.0 * 1024 * 1024));
+    }
+
 }
