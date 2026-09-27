@@ -194,7 +194,7 @@ public class GameRestorePackageManager {
 
             // 40-70%：导出游戏文件（每个文件/目录回调子进度）
             if (includeGameFiles && gameExe != null && gameExe.exists()) {
-                callback.onProgress(42, "导出游戏文件（打包整个游戏目录，可能需要较长时间）...");
+                callback.onProgress(42, "正在打包游戏文件: " + gameExe.getName() + "（整个游戏目录，请耐心等待）...");
                 File gameParentDir = gameExe.getParentFile();
                 if (gameParentDir != null && gameParentDir.exists()) {
                     gameDirName = gameParentDir.getName();
@@ -262,7 +262,11 @@ public class GameRestorePackageManager {
      * v3修复：不再静默回退默认Wine版本；未安装时抛出明确错误；收集依赖警告
      */
     public static int[] importPackage(Context context, File packageFile, ImportCallback callback) throws Exception {
-        if (!packageFile.exists() || !packageFile.getName().endsWith(".grp.zip")) {
+        if (!packageFile.exists()) {
+            throw new Exception("无效的游戏数据包文件");
+        }
+        String pkgName = packageFile.getName().toLowerCase(Locale.US);
+        if (!pkgName.endsWith(".grp.zip") && !pkgName.endsWith(".zip")) {
             throw new Exception("无效的游戏数据包文件");
         }
 
@@ -286,8 +290,10 @@ public class GameRestorePackageManager {
             boolean containsGameFiles = metadata.optBoolean("containsGameFiles", false);
             boolean containsWineRuntime = metadata.optBoolean("containsWineRuntime", false);
 
-            // v5：如果数据包包含Wine运行环境，则不需要预先安装Wine
-            if (!containsWineRuntime && wineVersion != null && !wineVersion.isEmpty()) {
+            // BUG5修复：即使数据包自带Wine运行环境（.wine前缀），Wine程序二进制仍需已安装。
+            // wineruntime 打包的是 .wine 前缀（drive_c/注册表等），而非 wine/wine64 可执行程序。
+            // 因此无论 containsWineRuntime 是否为 true，都必须校验 wineVersion 二进制已安装。
+            if (wineVersion != null && !wineVersion.isEmpty()) {
                 if (!isWineVersionInstalled(context, wineVersion)) {
                     FileUtils.delete(tempDir);
                     throw new Exception("数据包需要Wine版本 " + wineVersion + "，当前未安装。请先在设置中安装该版本后再导入。");
@@ -343,17 +349,37 @@ public class GameRestorePackageManager {
             // 30-50%：还原Wine运行环境（含子进度）
             String containerWineVersion = newContainer.getWineVersion();
             if (containsWineRuntime) {
-                callback.onProgress(32, "还原Wine运行环境（数据包内置，无需预先安装）...");
+                callback.onProgress(32, "还原Wine运行环境（数据包内置，正在复制.wine目录）...");
                 File srcWineRuntime = new File(tempDir, "wineruntime");
                 File destWineDir = new File(newContainerDir, ".wine");
                 if (srcWineRuntime.exists()) {
                     // v7：保留符号链接复制，避免dosdevices断裂
+                    // 进度条优化：按顶层目录逐个复制并回调当前目录名
                     try {
-                        copyDirectoryPreservingSymlinks(srcWineRuntime, destWineDir);
+                        File[] topItems = srcWineRuntime.listFiles();
+                        int totalTop = topItems != null ? topItems.length : 0;
+                        int doneTop = 0;
+                        if (topItems != null) {
+                            for (File item : topItems) {
+                                File destItem = new File(destWineDir, item.getName());
+                                try {
+                                    copyDirectoryPreservingSymlinks(item, destItem);
+                                } catch (Exception e) {
+                                    // 单项失败不阻塞
+                                }
+                                doneTop++;
+                                int p = 32 + (int) ((doneTop / (float) Math.max(1, totalTop)) * 14);
+                                callback.onProgress(Math.min(46, p), "还原Wine运行环境: " + item.getName());
+                            }
+                        }
+                        if (totalTop == 0) {
+                            copyDirectoryPreservingSymlinks(srcWineRuntime, destWineDir);
+                        }
                     } catch (Exception e) {
                         throw new Exception("Wine运行环境还原失败: " + e.getMessage());
                     }
-                    // v7：修复dosdevices符号链接并设置目录权限
+                    // v7：修复dosdevices符号链接、注册表/ini占位并设置目录权限
+                    callback.onProgress(47, "修复Wine环境（符号链接/权限）...");
                     fixWineEnvironment(destWineDir);
                     callback.onProgress(48, "Wine运行环境还原成功");
                 } else {
@@ -1322,24 +1348,20 @@ public class GameRestorePackageManager {
 
     /**
      * v5：复制Wine运行环境，排除游戏目录（Games）避免重复打包
-     * v7：保留符号链接（dosdevices），排除根目录注册表文件（已单独导出）
+     * v7：保留符号链接（dosdevices）
+     * BUG5修复：不再跳过根目录注册表文件（system.reg/user.reg/userdef.reg）。
+     *   原因：若导出时 includeRegistry=false，注册表文件既不会进 container/registry/，
+     *   又被这里跳过，导致导入后的 .wine 完全没有注册表，wine 首次启动即崩溃、容器进不去。
+     *   现在注册表随 .wine 一起打包；若同时存在 container/registry/ 单独还原，会覆盖此份。
      */
     private static void copyWineRuntime(File wineDir, File destDir, ExportCallback callback,
                                          int startProgress, int endProgress) {
         if (!wineDir.isDirectory() || !destDir.exists()) return;
-        // 注册表文件已单独导出到 container/registry/，避免重复
-        final java.util.Set<String> skipRootFiles = new java.util.HashSet<>(
-                java.util.Arrays.asList("system.reg", "user.reg", "userdef.reg"));
         File[] files = wineDir.listFiles();
         if (files == null) return;
         int total = files.length;
         int copied = 0;
         for (File file : files) {
-            // 排除根目录注册表文件
-            if (file.isFile() && skipRootFiles.contains(file.getName())) {
-                copied++;
-                continue;
-            }
             // 排除游戏目录（已在gamefiles/中）
             if (file.isDirectory() && "drive_c".equals(file.getName())) {
                 File destDriveC = new File(destDir, "drive_c");
@@ -1421,12 +1443,20 @@ public class GameRestorePackageManager {
     /**
      * v7：导入Wine运行环境后修复dosdevices符号链接并设置.wine目录权限。
      * 确保 .wine/dosdevices/c: 指向 ../drive_c，断裂则重建。
+     * BUG5修复：确保 system.reg/user.reg/userdef.reg 与 system.ini/win.ini 存在，
+     *   缺失时写入最小占位内容，避免 wine 首次启动因缺少注册表/ini 文件而崩溃、容器进不去。
      */
     private static void fixWineEnvironment(File wineDir) {
         try {
             // 确保drive_c存在
             File driveC = new File(wineDir, "drive_c");
             if (!driveC.exists()) driveC.mkdirs();
+            // BUG5：确保 drive_c 关键子目录存在（users/windows/Program Files 等）
+            // （这些通常随 .wine 一起复制；此处仅兜底创建，避免空目录导致 wine 报错）
+            new File(driveC, "windows").mkdirs();
+            new File(driveC, "users").mkdirs();
+            new File(driveC, "Program Files").mkdirs();
+            new File(driveC, "Program Files (x86)").mkdirs();
 
             // 修复dosdevices目录
             File dosdevices = new File(wineDir, "dosdevices");
@@ -1455,19 +1485,34 @@ public class GameRestorePackageManager {
                 }
             }
 
-            // 确保d:、e:等必要符号链接存在（指向设备占位）
-            for (String drive : new String[]{"d:", "e:"}) {
-                File link = new File(dosdevices, drive);
-                if (!link.exists() && !Files.isSymbolicLink(link.toPath())) {
-                    // 不强制创建d:/e:，Wine会在首次启动时自动创建
-                }
-            }
+            // BUG5：确保注册表文件存在，缺失则写最小占位（wine 可在此基础上重建）
+            ensureFileContent(new File(wineDir, "system.reg"),
+                    "REGEDIT4\n\n[System\\\\ControlSet001\\\\Control\\\\ Wine]\n\"Version\"=\"Wine 8.0\"\n");
+            ensureFileContent(new File(wineDir, "user.reg"),
+                    "REGEDIT4\n\n[Software\\\\Wine]\n");
+            ensureFileContent(new File(wineDir, "userdef.reg"),
+                    "REGEDIT4\n\n[Software\\\\Wine]\n");
+
+            // BUG5：确保 system.ini / win.ini 存在
+            ensureFileContent(new File(wineDir, "system.ini"),
+                    "[drivers]\n" + "midi=mmdrv.dll\n" + "timer=timer.dll\n\n");
+            ensureFileContent(new File(wineDir, "win.ini"),
+                    "[windows]\n" + "spooler=yes\n" + "load=\n" + "run=\n" + "NetWork=0\n\n");
 
             // 设置.wine目录及子目录权限
             setPermissionsRecursive(wineDir);
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    /** BUG5：文件不存在时写入最小占位内容。 */
+    private static void ensureFileContent(File file, String content) {
+        if (file == null) return;
+        if (file.exists() && file.length() >= 0) return;
+        try (PrintWriter pw = new PrintWriter(new FileOutputStream(file, false))) {
+            pw.print(content);
+        } catch (Exception ignored) {}
     }
 
     private static void deleteRecursiveQuiet(File file) {
