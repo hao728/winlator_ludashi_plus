@@ -141,16 +141,32 @@ android {
         freeCompilerArgs += ['-opt-in=androidx.compose.material3.ExperimentalMaterial3Api']
     }
 
-    // 签名配置已移除：构建未签名APK
+    // 通用debug签名（Winlator开发者常用，大部分设备通用）
+    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+        release {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
 
-    // Keep Winlator’s buildTypes
+    // Keep Winlator's buildTypes
     buildTypes {
         debug {
             minifyEnabled false
+            signingConfig signingConfigs.debug
         }
         release {
             minifyEnabled false
             crunchPngs false
+            signingConfig signingConfigs.release
         }
     }
 

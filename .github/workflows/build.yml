@@ -66,12 +66,6 @@ jobs:
           cp "$LAYER" app/src/main/jniLibs/arm64-v8a/libVkLayer_khronos_validation.so
           test -s app/src/main/jniLibs/arm64-v8a/libVkLayer_khronos_validation.so
 
-      - name: 移除签名配置（避免Untitled.jks不存在导致构建失败）
-        run: |
-          sed -i '/signingConfigs {/,/^    }/d' app/build.gradle
-          sed -i 's/.*signingConfig signingConfigs.ludashi.*//g' app/build.gradle
-          echo "签名配置已移除，残留数：$(grep -c signingConfig app/build.gradle || echo 0)"
-
       - name: Build with Gradle
         run: ./gradlew assembleRelease --stacktrace --info
 
