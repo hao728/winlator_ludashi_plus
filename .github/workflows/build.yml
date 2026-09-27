@@ -70,6 +70,29 @@ jobs:
       - name: Build with Gradle
         run: ./gradlew assembleRelease --stacktrace --info
 
+      - name: Sign APK with apksigner
+        run: |
+          set -e
+          APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
+          echo "原始APK: $APK_PATH"
+          # 找到apksigner
+          APKSIGNER=$(find $ANDROID_HOME/build-tools -name "apksigner" | head -1)
+          echo "apksigner: $APKSIGNER"
+          # 手动签名（v1+v2+v3）
+          $APKSIGNER sign \
+            --ks app/debug.keystore \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out "$APK_PATH" \
+            "$APK_PATH"
+          echo "✅ APK签名完成"
+          # 验证签名
+          $APKSIGNER verify --print-certs "$APK_PATH"
+
       - name: Verify APK signature
         run: |
           set -e
