@@ -1155,34 +1155,76 @@ public class ConfigCenterFragment extends Fragment {
     /** BUG3：从配置中心列表直接导入本地数据包文件。 */
     private void importLocalPackageFile(final File pkgFile) {
         final Context ctx = getContext();
-        if (ctx == null || pkgFile == null || !pkgFile.exists()) return;
-        // 复制到临时文件后走与选择器一致的流程
+        if (ctx == null || pkgFile == null || !pkgFile.exists()) {
+            return;
+        }
+        // 复制到临时文件后走与选择器一致的流程（全部在异步线程执行，避免阻塞UI）
         executor.execute(() -> {
+            final File tempFile = new File(ctx.getCacheDir(),
+                    "import_" + System.currentTimeMillis() + ".grp.zip");
             try {
-                final File tempFile = new File(ctx.getCacheDir(),
-                        "import_" + System.currentTimeMillis() + ".grp.zip");
+                // 1. 复制文件到临时目录
                 try (java.io.FileInputStream is = new java.io.FileInputStream(pkgFile);
                      java.io.FileOutputStream os = new java.io.FileOutputStream(tempFile)) {
                     byte[] buffer = new byte[8192];
                     int len;
                     while ((len = is.read(buffer)) > 0) os.write(buffer, 0, len);
+                } catch (Exception copyEx) {
+                    // 复制失败：清理临时文件并明确反馈
+                    tempFile.delete();
+                    postToast(ctx, "复制数据包失败: " + copyEx.getMessage());
+                    return;
                 }
+
+                // 2. 解析数据包信息
                 final GameRestorePackageManager.PackageInfo pkgInfo =
                         GameRestorePackageManager.parsePackageInfo(tempFile);
-                if (getActivity() == null) return;
-                getActivity().runOnUiThread(() -> {
-                    if (pkgInfo == null) {
-                        Toast.makeText(ctx, "无法解析数据包", Toast.LENGTH_LONG).show();
-                        tempFile.delete();
-                        return;
-                    }
-                    confirmAndImportPackage(ctx, tempFile, pkgInfo);
-                });
+                if (pkgInfo == null) {
+                    // 解析失败：删除临时文件并提示用户
+                    tempFile.delete();
+                    postToast(ctx, "无法解析数据包，请确认文件格式正确");
+                    return;
+                }
+
+                // 3. 切回UI线程显示确认弹窗；getActivity()为null时不静默return，用主线程Handler兜底
+                Activity act = getActivity();
+                if (act != null) {
+                    act.runOnUiThread(() -> {
+                        try {
+                            confirmAndImportPackage(ctx, tempFile, pkgInfo);
+                        } catch (Exception dialogEx) {
+                            Toast.makeText(ctx, "显示导入确认失败: " + dialogEx.getMessage(), Toast.LENGTH_LONG).show();
+                            tempFile.delete();
+                        }
+                    });
+                } else {
+                    // Activity已销毁（页面退出）：用主线程Handler尝试弹窗，失败则Toast提示
+                    new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                        try {
+                            confirmAndImportPackage(ctx, tempFile, pkgInfo);
+                        } catch (Exception dialogEx) {
+                            Toast.makeText(ctx, "页面已退出，请重新进入配置中心后再导入", Toast.LENGTH_LONG).show();
+                            tempFile.delete();
+                        }
+                    });
+                }
             } catch (Exception ex) {
-                if (getActivity() != null) getActivity().runOnUiThread(() ->
-                        Toast.makeText(ctx, "导入失败: " + ex.getMessage(), Toast.LENGTH_LONG).show());
+                tempFile.delete();
+                postToast(ctx, "导入失败: " + ex.getMessage());
             }
         });
+    }
+
+    /** 在UI线程显示Toast，即使Fragment的Activity已销毁也能给出反馈。 */
+    private static void postToast(final Context ctx, final String msg) {
+        if (ctx == null || msg == null) return;
+        try {
+            new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                try {
+                    Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show();
+                } catch (Exception ignored) {}
+            });
+        } catch (Exception ignored) {}
     }
 
     private void pickGameToApply(ConfigEntry e) {
@@ -1330,29 +1372,64 @@ public class ConfigCenterFragment extends Fragment {
         final Context ctx = getContext();
         if (ctx == null) return;
 
-        try {
-            final File tempFile = new File(ctx.getCacheDir(), "import_" + System.currentTimeMillis() + ".grp.zip");
-            try (InputStream is = ctx.getContentResolver().openInputStream(uri);
-                 java.io.FileOutputStream os = new java.io.FileOutputStream(tempFile)) {
-                byte[] buffer = new byte[8192];
-                int len;
-                while ((len = is.read(buffer)) > 0) {
-                    os.write(buffer, 0, len);
+        // 显示不可取消的进度对话框：大文件复制与ZIP解压移到异步线程，避免UI线程阻塞导致黑屏/ANR
+        final ProgressDialog pd = new ProgressDialog(ctx);
+        pd.setTitle("正在读取数据包");
+        pd.setMessage("请稍候...");
+        pd.setCancelable(false);
+        pd.show();
+
+        executor.execute(() -> {
+            final File tempFile = new File(ctx.getCacheDir(),
+                    "import_" + System.currentTimeMillis() + ".grp.zip");
+            try {
+                // 1. 在异步线程复制URI内容到临时文件
+                try (InputStream is = ctx.getContentResolver().openInputStream(uri);
+                     java.io.FileOutputStream os = new java.io.FileOutputStream(tempFile)) {
+                    if (is == null) throw new Exception("无法打开所选文件");
+                    byte[] buffer = new byte[8192];
+                    int len;
+                    while ((len = is.read(buffer)) > 0) {
+                        os.write(buffer, 0, len);
+                    }
+                }
+
+                // 2. 在异步线程解析数据包信息（解压ZIP读取metadata，耗时操作）
+                final GameRestorePackageManager.PackageInfo pkgInfo =
+                        GameRestorePackageManager.parsePackageInfo(tempFile);
+
+                // 3. 切回UI线程：关闭进度框，显示确认弹窗或错误提示
+                Activity act = getActivity();
+                if (act != null) {
+                    act.runOnUiThread(() -> {
+                        try { pd.dismiss(); } catch (Exception ignored) {}
+                        if (pkgInfo == null) {
+                            Toast.makeText(ctx, "无法解析数据包，请确认文件格式正确", Toast.LENGTH_LONG).show();
+                            tempFile.delete();
+                            return;
+                        }
+                        confirmAndImportPackage(ctx, tempFile, pkgInfo);
+                    });
+                } else {
+                    // Activity已销毁：关闭进度框并清理
+                    try { pd.dismiss(); } catch (Exception ignored) {}
+                    tempFile.delete();
+                    postToast(ctx, "页面已退出，请重新进入配置中心后再导入");
+                }
+            } catch (Exception e) {
+                tempFile.delete();
+                Activity act = getActivity();
+                if (act != null) {
+                    act.runOnUiThread(() -> {
+                        try { pd.dismiss(); } catch (Exception ignored) {}
+                        Toast.makeText(ctx, "导入失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    });
+                } else {
+                    try { pd.dismiss(); } catch (Exception ignored) {}
+                    postToast(ctx, "导入失败: " + e.getMessage());
                 }
             }
-
-            // 解析数据包信息
-            final GameRestorePackageManager.PackageInfo pkgInfo = GameRestorePackageManager.parsePackageInfo(tempFile);
-            if (pkgInfo == null) {
-                Toast.makeText(ctx, "无法解析数据包，请确认文件格式正确", Toast.LENGTH_LONG).show();
-                tempFile.delete();
-                return;
-            }
-            confirmAndImportPackage(ctx, tempFile, pkgInfo);
-
-        } catch (Exception e) {
-            Toast.makeText(ctx, "导入失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
-        }
+        });
     }
 
     /**

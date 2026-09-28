@@ -308,7 +308,8 @@ public class GameRestorePackageManager {
             if (wineVersion != null && !wineVersion.isEmpty()) {
                 if (!isWineVersionInstalled(context, wineVersion)) {
                     FileUtils.delete(tempDir);
-                    throw new Exception("数据包需要Wine版本 " + wineVersion + "，当前未安装。请先在设置中安装该版本后再导入。");
+                    throw new Exception("数据包需要Wine版本 " + wineVersion
+                            + "，当前未安装。请先在「设置 → 组件管理」中安装该版本后再导入。");
                 }
             }
 
@@ -458,6 +459,10 @@ public class GameRestorePackageManager {
             newContainer.saveData();
             callback.onProgress(50, "容器已保存");
 
+            // P0防护：导入后完整性校验，确保容器配置已落盘、关键运行环境就绪，
+            // 缺失项通过onWarning上报（不阻断导入，但帮助定位闪退根因）。
+            verifyContainerIntegrity(newContainer, newContainerDir, containsWineRuntime, callback);
+
             // BUG1修复：将新创建的容器注册到 ContainerManager 内存列表，
             // 否则 manager.getContainers() 不包含新容器，导致导入后UI列表/容器查找失效。
             // maxContainerId 已是本次 newId（getNextContainerId 时取自磁盘最大值+1），
@@ -589,14 +594,43 @@ public class GameRestorePackageManager {
     // ==================== 公共查询方法（v3新增） ====================
 
     /**
-     * 检查指定Wine版本是否已安装
+     * 检查指定Wine版本是否已安装。
+     * 先按原始identifier查询；若识别失败，自动规范化分隔符（下划线→连字符、空格→连字符）
+     * 与大小写后重试，兼容不同设备导出的版本字符串格式差异（如 proton_9.0_arm64ec / Proton-9.0-arm64ec）。
+     * 同时校验path指向的目录真实存在，避免WineInfo.fromIdentifier解析失败时静默回退到
+     * MAIN_WINE_VERSION 造成的误判。
      */
     public static boolean isWineVersionInstalled(Context context, String wineVersion) {
         if (wineVersion == null || wineVersion.isEmpty()) return false;
         try {
             ContentsManager contentsManager = new ContentsManager(context);
-            WineInfo wineInfo = WineInfo.fromIdentifier(context, contentsManager, wineVersion);
-            return wineInfo != null && wineInfo.path != null && !wineInfo.path.isEmpty();
+            // 候选列表：原始字符串 + 规范化字符串（下划线/空格统一为连字符，小写）
+            String normalized = wineVersion.trim()
+                    .replace('_', '-')
+                    .replaceAll("\\s+", "-")
+                    .toLowerCase(Locale.US);
+            String[] candidates = normalized.equals(wineVersion.trim())
+                    ? new String[] { wineVersion }
+                    : new String[] { wineVersion, normalized };
+            for (String candidate : candidates) {
+                if (candidate == null || candidate.isEmpty()) continue;
+                WineInfo wineInfo = WineInfo.fromIdentifier(context, contentsManager, candidate);
+                if (wineInfo == null) continue;
+                if (wineInfo.path != null && !wineInfo.path.isEmpty()) {
+                    // 用户请求的就是主版本（随imagefs内置），直接信任，不校验磁盘路径
+                    // （imagefs可能尚未完整解压，但主版本本身是内置的）
+                    if (WineInfo.isMainWineVersion(candidate)) {
+                        return true;
+                    }
+                    // 其他版本必须校验安装目录真实存在，避免fromIdentifier解析失败时
+                    // 静默回退到MAIN_WINE_VERSION造成误判
+                    File wineDir = new File(wineInfo.path);
+                    if (wineDir.exists() && wineDir.isDirectory()) {
+                        return true;
+                    }
+                }
+            }
+            return false;
         } catch (Exception e) {
             return false;
         }
@@ -1691,6 +1725,65 @@ public class GameRestorePackageManager {
             }
         } else {
             FileUtils.copy(src, dest);
+        }
+    }
+
+    /**
+     * P0防护：导入后容器完整性校验。
+     * 检查项（缺失仅告警，不阻断导入）：
+     *   1. .container 配置文件已写入且非空；
+     *   2. extraData 中安装状态缓存标记已清除（dxwrapper/installedGraphicsWrapper/
+     *      wincomponents/startupSelection/desktopTheme/box64Version/fexcoreVersion）；
+     *   3. 若含Wine运行时：.wine 目录、dosdevices/c: 与 z: 符号链接、system.reg/user.reg 存在。
+     */
+    private static void verifyContainerIntegrity(Container container, File containerDir,
+                                                  boolean containsWineRuntime, ImportCallback callback) {
+        try {
+            // 1. .container 文件落盘校验
+            File cfgFile = container.getConfigFile();
+            if (!cfgFile.exists() || cfgFile.length() == 0) {
+                callback.onWarning("容器配置文件(.container)未正确写入，可能导致启动失败");
+            }
+
+            // 2. extraData 缓存标记清除校验（应为空串，即已被putExtra(null)移除）
+            String[] cachedKeys = {"dxwrapper", "installedGraphicsWrapper", "wincomponents",
+                    "startupSelection", "desktopTheme", "box64Version", "fexcoreVersion"};
+            for (String key : cachedKeys) {
+                String v = container.getExtra(key);
+                if (v != null && !v.isEmpty()) {
+                    callback.onWarning("容器缓存标记未清除(" + key + "=" + v + ")，可能跳过组件重装");
+                }
+            }
+
+            // 3. Wine运行时关键路径校验
+            if (containsWineRuntime) {
+                File wineDir = new File(containerDir, ".wine");
+                if (!wineDir.exists()) {
+                    callback.onWarning("Wine运行环境目录(.wine)缺失，容器可能闪退");
+                } else {
+                    File dosdevices = new File(wineDir, "dosdevices");
+                    if (!dosdevices.exists()) {
+                        callback.onWarning("dosdevices目录缺失，c:/z:盘符可能不可用");
+                    } else {
+                        File cLink = new File(dosdevices, "c:");
+                        if (!cLink.exists()) {
+                            callback.onWarning("dosdevices/c: 链接缺失，C盘不可用");
+                        }
+                        File zLink = new File(dosdevices, "z:");
+                        if (!zLink.exists()) {
+                            callback.onWarning("dosdevices/z: 链接缺失，Z盘不可用");
+                        }
+                    }
+                    if (!new File(wineDir, "system.reg").exists()) {
+                        callback.onWarning("system.reg 注册表文件缺失");
+                    }
+                    if (!new File(wineDir, "user.reg").exists()) {
+                        callback.onWarning("user.reg 注册表文件缺失");
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.w("GameRestore", "verifyContainerIntegrity failed: " + e.getMessage());
         }
     }
 
