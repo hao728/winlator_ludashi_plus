@@ -350,6 +350,14 @@ public class ConfigCenterFragment extends Fragment {
             info.audioDriver = json.optString("audioDriver", "");
             info.envVars = json.optString("envVars", "");
             info.executableName = json.optString("executableName", "");
+            // BUG1：渲染器与Vulkan Wrapper
+            info.rendererNative = json.optBoolean("rendererNative", false);
+            info.graphicsWrapper = json.optString("graphicsWrapper", "wrapper");
+            info.graphicsDriverConfig = json.optString("graphicsDriverConfig", "");
+            info.dxwrapperConfig = json.optString("dxwrapperConfig", "");
+            info.containsZDrive = json.optBoolean("containsZDrive", false);
+            // BUG7：检测shortcutConfig是否存在
+            info.hasShortcutConfig = json.has("shortcutConfig");
             e.packageInfo = info;
 
             // BUG2：同目录同名 .png 图标（WolfsDungeon.grp.zip -> WolfsDungeon.png）
@@ -818,27 +826,61 @@ public class ConfigCenterFragment extends Fragment {
             if (isDiff(tmp.getWineVersion(), defaultWine)) {
                 sb.append("• Wine版本: ").append(tmp.getWineVersion()).append('\n');
             }
-            if (isDiff(tmp.getGraphicsDriver(), Container.DEFAULT_GRAPHICS_DRIVER)) {
-                String vk = kvs(tmp.getGraphicsDriverConfig(), "vulkanVersion");
-                sb.append("• 图形驱动: ").append(tmp.getGraphicsDriver());
-                if (!vk.isEmpty()) sb.append(" (Vulkan ").append(vk).append(')');
+            // BUG1：渲染器（rendererNative=true显示Native，默认false=Vulkan不显示）
+            if (tmp.getRendererNative()) {
+                sb.append("• 渲染器: Native\n");
+            }
+            // OpenGL驱动（graphicsDriver，附Vulkan API版本）
+            boolean gpuDriverDiff = isDiff(tmp.getGraphicsDriver(), Container.DEFAULT_GRAPHICS_DRIVER);
+            String vkApiVer = kvs(tmp.getGraphicsDriverConfig(), "vulkanVersion");
+            String vkDriverVer = kvs(tmp.getGraphicsDriverConfig(), "version");
+            if (gpuDriverDiff || !vkDriverVer.isEmpty()) {
+                sb.append("• OpenGL驱动: ").append(notEmpty(tmp.getGraphicsDriver()) ? tmp.getGraphicsDriver() : Container.DEFAULT_GRAPHICS_DRIVER);
+                if (!vkApiVer.isEmpty()) sb.append(" (Vulkan ").append(vkApiVer).append(')');
                 sb.append('\n');
             }
-            if (isDiff(tmp.getDXWrapper(), Container.DEFAULT_DXWRAPPER)) {
-                String dxvk = kvs(tmp.getDXWrapperConfig(), "version");
-                sb.append("• DXWrapper: ").append(tmp.getDXWrapper());
-                if (!dxvk.isEmpty()) sb.append(" (DXVK ").append(dxvk).append(')');
+            // BUG1：Vulkan驱动版本（如turnip26.2.0）
+            if (!vkDriverVer.isEmpty()) {
+                sb.append("• Vulkan驱动: ").append(vkDriverVer).append('\n');
+            }
+            // BUG1：Vulkan Wrapper（graphicsWrapper，默认wrapper不显示）
+            if (isDiff(tmp.getGraphicsWrapper(), Container.DEFAULT_GRAPHICS_WRAPPER)) {
+                sb.append("• Vulkan Wrapper: ").append(tmp.getGraphicsWrapper()).append('\n');
+            }
+            // BUG2：DXWrapper（附DXVK和VKD3D版本）
+            String dxvkVer = kvs(tmp.getDXWrapperConfig(), "version");
+            String vkd3dVer = kvs(tmp.getDXWrapperConfig(), "vkd3dVersion");
+            boolean dxwrapperDiff = isDiff(tmp.getDXWrapper(), Container.DEFAULT_DXWRAPPER);
+            if (dxwrapperDiff || !dxvkVer.isEmpty() || !vkd3dVer.isEmpty()) {
+                sb.append("• DXWrapper: ").append(notEmpty(tmp.getDXWrapper()) ? tmp.getDXWrapper() : Container.DEFAULT_DXWRAPPER);
+                if (!dxvkVer.isEmpty() || !vkd3dVer.isEmpty()) {
+                    sb.append("（");
+                    if (!dxvkVer.isEmpty()) sb.append("DXVK ").append(dxvkVer);
+                    if (!dxvkVer.isEmpty() && !vkd3dVer.isEmpty()) sb.append(" / ");
+                    if (!vkd3dVer.isEmpty()) sb.append("VKD3D ").append(vkd3dVer);
+                    sb.append("）");
+                }
                 sb.append('\n');
             }
-            // 转译器：Box64 / FEXCore（版本+预设）
+            // BUG3：转译器：Box64 / FEXCore（版本+预设），确保不同时显示
             String emu = tmp.getEmulator();
             boolean isBox64 = emu != null && emu.toLowerCase(Locale.US).contains("box64");
             boolean isFex = emu != null && emu.toLowerCase(Locale.US).contains("fex");
-            if (isBox64 && notEmpty(tmp.getBox64Version())) {
+            if (isBox64) {
+                sb.append("• 转译器: Box64");
+                if (notEmpty(tmp.getBox64Version())) sb.append(' ').append(tmp.getBox64Version());
+                if (notEmpty(tmp.getBox64Preset())) sb.append("（预设: ").append(tmp.getBox64Preset()).append('）');
+                sb.append('\n');
+            } else if (isFex) {
+                sb.append("• 转译器: FEXCore");
+                if (notEmpty(tmp.getFEXCoreVersion())) sb.append(' ').append(tmp.getFEXCoreVersion());
+                if (notEmpty(tmp.getFEXCorePreset())) sb.append("（预设: ").append(tmp.getFEXCorePreset()).append('）');
+                sb.append('\n');
+            } else if (notEmpty(tmp.getBox64Version())) {
                 sb.append("• 转译器: Box64 ").append(tmp.getBox64Version());
                 if (notEmpty(tmp.getBox64Preset())) sb.append("（预设: ").append(tmp.getBox64Preset()).append('）');
                 sb.append('\n');
-            } else if (isFex && notEmpty(tmp.getFEXCoreVersion())) {
+            } else if (notEmpty(tmp.getFEXCoreVersion())) {
                 sb.append("• 转译器: FEXCore ").append(tmp.getFEXCoreVersion());
                 if (notEmpty(tmp.getFEXCorePreset())) sb.append("（预设: ").append(tmp.getFEXCorePreset()).append('）');
                 sb.append('\n');
@@ -971,6 +1013,15 @@ public class ConfigCenterFragment extends Fragment {
                 warn.setLayoutParams(wlp);
                 root.addView(warn);
             }
+            // BUG4：Wine运行环境完整性警告
+            if (info != null && info.wineRuntimeWarning != null && !info.wineRuntimeWarning.isEmpty()) {
+                TextView rtWarn = new TextView(ctx);
+                rtWarn.setText("⚠ " + info.wineRuntimeWarning);
+                rtWarn.setTextColor(0xFFFF7043);
+                rtWarn.setTextSize(12);
+                rtWarn.setLayoutParams(topLp(6));
+                root.addView(rtWarn);
+            }
 
             ScrollView sv = new ScrollView(ctx);
             sv.addView(root);
@@ -1094,8 +1145,20 @@ public class ConfigCenterFragment extends Fragment {
                 .setTitle("删除配置文件")
                 .setMessage("确定删除「" + e.gameName + "」的配置文件吗？此操作不可恢复。")
                 .setPositiveButton("删除", (d, w) -> {
-                    if (e.file.delete()) {
-                        Toast.makeText(ctx, "已删除", Toast.LENGTH_SHORT).show();
+                    boolean deleted = e.file.delete();
+                    // BUG6：同时删除同目录同名.png图标
+                    boolean iconDeleted = false;
+                    if (e.iconPath != null && !e.iconPath.isEmpty()) {
+                        File iconFile = new File(e.iconPath);
+                        if (iconFile.exists()) iconDeleted = iconFile.delete();
+                    } else {
+                        // 兜底：根据配置文件名推导同名.png
+                        String base = basename(e.file.getName());
+                        File icon = new File(e.file.getParentFile(), base + ".png");
+                        if (icon.exists()) iconDeleted = icon.delete();
+                    }
+                    if (deleted) {
+                        Toast.makeText(ctx, iconDeleted ? "已删除配置和图标" : "已删除", Toast.LENGTH_SHORT).show();
                         refreshList();
                     } else {
                         Toast.makeText(ctx, "删除失败", Toast.LENGTH_SHORT).show();
@@ -1239,6 +1302,15 @@ public class ConfigCenterFragment extends Fragment {
             warn.setTextSize(12);
             warn.setLayoutParams(topLp(6));
             root.addView(warn);
+        }
+        // BUG4：Wine运行环境完整性警告
+        if (pkgInfo.wineRuntimeWarning != null && !pkgInfo.wineRuntimeWarning.isEmpty()) {
+            TextView rtWarn = new TextView(ctx);
+            rtWarn.setText("⚠ " + pkgInfo.wineRuntimeWarning);
+            rtWarn.setTextColor(0xFFFF7043);
+            rtWarn.setTextSize(12);
+            rtWarn.setLayoutParams(topLp(6));
+            root.addView(rtWarn);
         }
 
         ScrollView sv = new ScrollView(ctx);

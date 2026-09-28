@@ -87,6 +87,13 @@ public class GameRestorePackageManager {
         public String fexcorePreset;
         public String envVars;
         public String screenSize;
+        // BUG1：渲染器与Vulkan Wrapper
+        public boolean rendererNative;
+        public String graphicsWrapper;
+        // BUG5：是否包含Z盘Wine运行时
+        public boolean containsZDrive;
+        // BUG4：Wine运行环境完整性警告
+        public String wineRuntimeWarning;
         // v4：快捷方式信息（仅文件名和目录名，不含本地路径）
         public String executableName;
         public String gameDirName;
@@ -179,11 +186,14 @@ public class GameRestorePackageManager {
 
             // 20-40%：导出Wine运行环境（每个顶层目录回调子进度）
             boolean wineRuntimePacked = false;
+            boolean containsZDrive = false;
             if (includeWineRuntime) {
                 callback.onProgress(22, "导出Wine运行环境（较大，请耐心等待）...");
                 File wineDir = new File(container.getRootDir(), ".wine");
                 if (wineDir.exists()) {
-                    copyWineRuntime(wineDir, wineruntimeDir, callback, 20, 40);
+                    copyWineRuntime(wineDir, wineruntimeDir, callback, 20, 38);
+                    // BUG5：复制z:符号链接指向的Wine运行时（容器外部目录）
+                    containsZDrive = copyZDriveRuntime(wineDir, wineruntimeDir, callback);
                     wineRuntimePacked = true;
                     callback.onProgress(40, "Wine运行环境已打包");
                 }
@@ -221,7 +231,7 @@ public class GameRestorePackageManager {
             // 创建元数据（快速，不占进度区间）
             callback.onProgress(76, "创建元数据...");
             JSONObject metadata = buildMetadata(context, shortcut, container, gameFilesPacked,
-                    includeRegistry, wineRuntimePacked, author, description);
+                    includeRegistry, wineRuntimePacked, containsZDrive, author, description);
             FileUtils.writeString(new File(tempDir, METADATA_FILE), metadata.toString(2));
 
             // 75-95%：压缩ZIP（每个文件回调子进度）
@@ -382,6 +392,15 @@ public class GameRestorePackageManager {
                     // v7：修复dosdevices符号链接、注册表/ini占位并设置目录权限
                     callback.onProgress(47, "修复Wine环境（符号链接/权限）...");
                     fixWineEnvironment(destWineDir);
+                    // BUG5：重建z:符号链接指向新容器的正确位置（旧链接指向旧设备绝对路径，已断裂）
+                    rebuildZDriveSymlink(destWineDir, newContainerDir);
+                    // BUG5：如果数据包包含zdrive运行时且Wine未安装，还原zdrive文件
+                    File zdrivePacked = new File(srcWineRuntime, "zdrive");
+                    if (zdrivePacked.exists() && zdrivePacked.isDirectory()
+                            && !isWineVersionInstalled(context, containerWineVersion)) {
+                        File zTargetDir = new File(newContainerDir.getParentFile().getParentFile(), ".");
+                        copyDirectorySimple(zdrivePacked, zTargetDir);
+                    }
                     callback.onProgress(48, "Wine运行环境还原成功");
                 } else {
                     throw new Exception("数据包标记包含Wine运行环境，但未找到wineruntime目录");
@@ -777,31 +796,68 @@ public class GameRestorePackageManager {
         if (isNonDefault(info.wineVersion, defaultWine)) {
             sb.append("• Wine版本: ").append(info.wineVersion).append('\n');
         }
-        // 图形驱动（附Vulkan版本）
-        if (isNonDefault(info.graphicsDriver, Container.DEFAULT_GRAPHICS_DRIVER)) {
-            String vkVer = getKvsValue(info.graphicsDriverConfig, "vulkanVersion");
-            sb.append("• 图形驱动: ").append(info.graphicsDriver);
-            if (!vkVer.isEmpty()) sb.append(" (Vulkan ").append(vkVer).append(')');
+        // BUG1：渲染器（rendererNative=true显示Native，默认false=Vulkan不显示）
+        if (info.rendererNative) {
+            sb.append("• 渲染器: Native\n");
+        }
+        // OpenGL驱动（graphicsDriver，附Vulkan API版本）
+        boolean gpuDriverDiff = isNonDefault(info.graphicsDriver, Container.DEFAULT_GRAPHICS_DRIVER);
+        String vkApiVer = getKvsValue(info.graphicsDriverConfig, "vulkanVersion");
+        String vkDriverVer = getKvsValue(info.graphicsDriverConfig, "version");
+        if (gpuDriverDiff || !vkDriverVer.isEmpty()) {
+            sb.append("• OpenGL驱动: ").append(isNotEmpty(info.graphicsDriver) ? info.graphicsDriver : Container.DEFAULT_GRAPHICS_DRIVER);
+            if (!vkApiVer.isEmpty()) sb.append(" (Vulkan ").append(vkApiVer).append(')');
             sb.append('\n');
         }
-        // DXWrapper（附DXVK版本）
-        if (isNonDefault(info.dxwrapper, Container.DEFAULT_DXWRAPPER)) {
-            String dxvkVer = getKvsValue(info.dxwrapperConfig, "version");
-            sb.append("• DXWrapper: ").append(info.dxwrapper);
-            if (!dxvkVer.isEmpty()) sb.append(" (DXVK ").append(dxvkVer).append(')');
+        // BUG1：Vulkan驱动版本（如turnip26.2.0）
+        if (!vkDriverVer.isEmpty()) {
+            sb.append("• Vulkan驱动: ").append(vkDriverVer).append('\n');
+        }
+        // BUG1：Vulkan Wrapper（graphicsWrapper，默认wrapper不显示）
+        if (isNonDefault(info.graphicsWrapper, Container.DEFAULT_GRAPHICS_WRAPPER)) {
+            sb.append("• Vulkan Wrapper: ").append(info.graphicsWrapper).append('\n');
+        }
+        // BUG2：DXWrapper（附DXVK和VKD3D版本）
+        String dxvkVer = getKvsValue(info.dxwrapperConfig, "version");
+        String vkd3dVer = getKvsValue(info.dxwrapperConfig, "vkd3dVersion");
+        boolean dxwrapperDiff = isNonDefault(info.dxwrapper, Container.DEFAULT_DXWRAPPER);
+        if (dxwrapperDiff || !dxvkVer.isEmpty() || !vkd3dVer.isEmpty()) {
+            sb.append("• DXWrapper: ").append(isNotEmpty(info.dxwrapper) ? info.dxwrapper : Container.DEFAULT_DXWRAPPER);
+            if (!dxvkVer.isEmpty() || !vkd3dVer.isEmpty()) {
+                sb.append("（");
+                if (!dxvkVer.isEmpty()) sb.append("DXVK ").append(dxvkVer);
+                if (!dxvkVer.isEmpty() && !vkd3dVer.isEmpty()) sb.append(" / ");
+                if (!vkd3dVer.isEmpty()) sb.append("VKD3D ").append(vkd3dVer);
+                sb.append("）");
+            }
             sb.append('\n');
         }
-        // 转译器：Box64 / FEXCore（版本+预设）
-        if (isNotEmpty(info.box64Version)) {
+        // BUG3：转译器：Box64 / FEXCore（版本+预设），确保不同时显示
+        String emu = info.emulator;
+        boolean emuIsBox64 = emu != null && emu.toLowerCase(Locale.US).contains("box64");
+        boolean emuIsFex = emu != null && emu.toLowerCase(Locale.US).contains("fex");
+        if (emuIsBox64) {
+            sb.append("• 转译器: Box64");
+            if (isNotEmpty(info.box64Version)) sb.append(' ').append(info.box64Version);
+            if (isNotEmpty(info.box64Preset)) sb.append("（预设: ").append(info.box64Preset).append('）');
+            sb.append('\n');
+        } else if (emuIsFex) {
+            sb.append("• 转译器: FEXCore");
+            if (isNotEmpty(info.fexcoreVersion)) sb.append(' ').append(info.fexcoreVersion);
+            if (isNotEmpty(info.fexcorePreset)) sb.append("（预设: ").append(info.fexcorePreset).append('）');
+            sb.append('\n');
+        } else if (isNotEmpty(info.box64Version)) {
+            // emulator为空但box64Version非空，默认显示Box64
             sb.append("• 转译器: Box64 ").append(info.box64Version);
             if (isNotEmpty(info.box64Preset)) sb.append("（预设: ").append(info.box64Preset).append('）');
             sb.append('\n');
         } else if (isNotEmpty(info.fexcoreVersion)) {
+            // emulator为空但fexcoreVersion非空，默认显示FEXCore
             sb.append("• 转译器: FEXCore ").append(info.fexcoreVersion);
             if (isNotEmpty(info.fexcorePreset)) sb.append("（预设: ").append(info.fexcorePreset).append('）');
             sb.append('\n');
-        } else if (isNonDefault(info.emulator, Container.DEFAULT_EMULATOR)) {
-            sb.append("• 转译器: ").append(info.emulator).append('\n');
+        } else if (isNonDefault(emu, Container.DEFAULT_EMULATOR)) {
+            sb.append("• 转译器: ").append(emu).append('\n');
         }
         // 屏幕分辨率
         if (isNonDefault(info.screenSize, Container.DEFAULT_SCREEN_SIZE)) {
@@ -937,6 +993,11 @@ public class GameRestorePackageManager {
             info.fexcorePreset = metadata.optString("fexcorePreset", "");
             info.envVars = metadata.optString("envVars", "");
             info.screenSize = metadata.optString("screenSize", "");
+            // BUG1：渲染器与Vulkan Wrapper
+            info.rendererNative = metadata.optBoolean("rendererNative", false);
+            info.graphicsWrapper = metadata.optString("graphicsWrapper", Container.DEFAULT_GRAPHICS_WRAPPER);
+            // BUG5：是否包含Z盘Wine运行时
+            info.containsZDrive = metadata.optBoolean("containsZDrive", false);
 
             JSONArray components = metadata.optJSONArray("requiredComponents");
             if (components != null) {
@@ -952,10 +1013,13 @@ public class GameRestorePackageManager {
                 JSONObject shortcutJson = new JSONObject(FileUtils.readString(shortcutJsonFile));
                 info.executableName = shortcutJson.optString("executableName", "");
                 info.gameDirName = shortcutJson.optString("gameDirName", "");
-                // v6：检测是否包含快捷方式独立配置
-                info.hasShortcutConfig = shortcutJson.has("shortcutConfig")
-                        && shortcutJson.optJSONObject("shortcutConfig") != null
-                        && shortcutJson.optJSONObject("shortcutConfig").length() > 0;
+                // BUG7：hasShortcutConfig判断修复——只要shortcutConfig字段存在即为true（即使为空对象）
+                info.hasShortcutConfig = shortcutJson.has("shortcutConfig");
+            }
+
+            // BUG4：Wine运行环境完整性检查
+            if (info.containsWineRuntime) {
+                info.wineRuntimeWarning = checkWineRuntimeIntegrity(tempDir);
             }
 
             return info;
@@ -1037,10 +1101,12 @@ public class GameRestorePackageManager {
 
     /**
      * v3：buildMetadata扩展完整容器环境字段
+     * BUG1：新增rendererNative/graphicsWrapper字段
+     * BUG5：新增containsZDrive字段
      */
     private static JSONObject buildMetadata(Context context, Shortcut shortcut, Container container,
                                              boolean gameFilesPacked, boolean includeRegistry,
-                                             boolean containsWineRuntime,
+                                             boolean containsWineRuntime, boolean containsZDrive,
                                              String author, String description) throws Exception {
         JSONObject metadata = new JSONObject();
         metadata.put("version", 3);
@@ -1054,6 +1120,7 @@ public class GameRestorePackageManager {
         metadata.put("containsGameFiles", gameFilesPacked);
         metadata.put("containsRegistry", includeRegistry);
         metadata.put("containsWineRuntime", containsWineRuntime);
+        metadata.put("containsZDrive", containsZDrive);
 
         // v3：完整容器环境字段
         metadata.put("graphicsDriver", container.getGraphicsDriver() != null ? container.getGraphicsDriver() : "");
@@ -1069,6 +1136,10 @@ public class GameRestorePackageManager {
         metadata.put("fexcorePreset", container.getFEXCorePreset() != null ? container.getFEXCorePreset() : "");
         metadata.put("screenSize", container.getScreenSize() != null ? container.getScreenSize() : "");
         metadata.put("envVars", container.getEnvVars() != null ? container.getEnvVars() : "");
+        // BUG1：渲染器与Vulkan Wrapper
+        metadata.put("rendererNative", container.getRendererNative());
+        String gw = container.getGraphicsWrapper();
+        metadata.put("graphicsWrapper", gw != null ? gw : Container.DEFAULT_GRAPHICS_WRAPPER);
 
         // v3：完整依赖列表
         JSONArray components = new JSONArray();
@@ -1125,6 +1196,40 @@ public class GameRestorePackageManager {
         }
     }
 
+    /**
+     * BUG4：检查数据包中Wine运行环境的完整性。
+     * 返回空字符串表示完整；否则返回警告文本。
+     */
+    private static String checkWineRuntimeIntegrity(File tempDir) {
+        try {
+            File wineRuntime = new File(tempDir, "wineruntime");
+            if (!wineRuntime.exists() || !wineRuntime.isDirectory()) {
+                return "Wine运行环境不完整，导入后可能无法启动";
+            }
+            // 1. 检查wineruntime/drive_c/windows/目录
+            File driveCWindows = new File(wineRuntime, "drive_c/windows");
+            if (!driveCWindows.exists() || !driveCWindows.isDirectory()) {
+                return "Wine运行环境不完整，导入后可能无法启动";
+            }
+            // 2. 检查wineruntime/dosdevices/目录
+            File dosdevices = new File(wineRuntime, "dosdevices");
+            if (!dosdevices.exists() || !dosdevices.isDirectory()) {
+                return "Wine运行环境不完整，导入后可能无法启动";
+            }
+            // 3. 检查system.reg/user.reg（wineruntime/下或container/registry/下）
+            boolean hasSystemReg = new File(wineRuntime, "system.reg").exists()
+                    || new File(tempDir, "container/registry/system.reg").exists();
+            boolean hasUserReg = new File(wineRuntime, "user.reg").exists()
+                    || new File(tempDir, "container/registry/user.reg").exists();
+            if (!hasSystemReg || !hasUserReg) {
+                return "Wine运行环境不完整，导入后可能无法启动";
+            }
+        } catch (Exception e) {
+            return "Wine运行环境不完整，导入后可能无法启动";
+        }
+        return "";
+    }
+
     private static JSONObject buildShortcutJson(Shortcut shortcut, File gameExe, String gameDirName) throws Exception {
         JSONObject json = new JSONObject();
         json.put("name", shortcut.name);
@@ -1138,7 +1243,8 @@ public class GameRestorePackageManager {
         json.put("rendererPresentMode", shortcut.getRendererPresentMode());
         json.put("rendererFilterMode", shortcut.getRendererFilterMode());
 
-        // v6：导出快捷方式独立配置（per-shortcut），排除设备专属字段
+        // BUG7：导出快捷方式独立配置（per-shortcut），排除设备专属字段
+        // 先导出固定列表中的字段
         JSONObject shortcutConfig = new JSONObject();
         String[] perShortcutKeys = {
             "rendererNative", "rendererPresentMode", "rendererDriverId", "rendererFilterMode", "rendererSwapRB",
@@ -1153,10 +1259,42 @@ public class GameRestorePackageManager {
                 shortcutConfig.put(key, value);
             }
         }
-        if (shortcutConfig.length() > 0) {
-            json.put("shortcutConfig", shortcutConfig);
-        }
+        // BUG7：从.desktop文件读取[Extra Data]段，导出所有额外字段（不只是固定列表）
+        readExtraDataFromDesktopFile(shortcut, shortcutConfig);
+        // BUG7：即使shortcutConfig为空也写入空对象，导入时知道有这个字段
+        json.put("shortcutConfig", shortcutConfig);
         return json;
+    }
+
+    /**
+     * BUG7：从.desktop文件的[Extra Data]段读取所有键值对，合并到shortcutConfig中。
+     * 确保导出shortcut的所有extraData字段，不只是固定列表。
+     */
+    private static void readExtraDataFromDesktopFile(Shortcut shortcut, JSONObject shortcutConfig) {
+        if (shortcut.file == null || !shortcut.file.exists()) return;
+        try {
+            List<String> lines = Files.readAllLines(shortcut.file.toPath());
+            boolean inExtraSection = false;
+            for (String line : lines) {
+                String trimmed = line.trim();
+                if (trimmed.startsWith("[")) {
+                    inExtraSection = trimmed.equalsIgnoreCase("[Extra Data]");
+                    continue;
+                }
+                if (!inExtraSection || trimmed.isEmpty()) continue;
+                int eq = trimmed.indexOf('=');
+                if (eq <= 0) continue;
+                String key = trimmed.substring(0, eq).trim();
+                String value = trimmed.substring(eq + 1).trim();
+                // 跳过设备专属/身份字段
+                if ("uuid".equals(key) || "customCoverArtPath".equals(key)) continue;
+                if (!shortcutConfig.has(key) && !value.isEmpty()) {
+                    shortcutConfig.put(key, value);
+                }
+            }
+        } catch (Exception e) {
+            // 读取失败不阻塞导出
+        }
     }
 
     private static boolean createShortcutFromJson(Context context, Container container, JSONObject shortcutJson,
@@ -1386,6 +1524,58 @@ public class GameRestorePackageManager {
         }
     }
 
+    /**
+     * BUG5：导出z:符号链接指向的Wine运行时文件。
+     * z:指向容器根目录的上两级（包含wine/wine64可执行文件和库）。
+     * 将该目录中的Wine运行时文件复制到wineruntime/zdrive/，排除大的临时文件和缓存。
+     * @return true if zdrive was packed
+     */
+    private static boolean copyZDriveRuntime(File wineDir, File wineruntimeDir, ExportCallback callback) {
+        try {
+            File zLink = new File(wineDir, "dosdevices/z:");
+            if (!Files.isSymbolicLink(zLink.toPath())) return false;
+            java.nio.file.Path zTarget = Files.readSymbolicLink(zLink.toPath());
+            File zTargetDir = zLink.toPath().getParent().resolve(zTarget).normalize().toFile();
+            if (!zTargetDir.exists() || !zTargetDir.isDirectory()) return false;
+
+            // 只复制Wine运行时相关的顶层文件/目录，排除大的缓存和用户数据
+            File zdriveDest = new File(wineruntimeDir, "zdrive");
+            zdriveDest.mkdirs();
+            callback.onProgress(38, "复制Z盘Wine运行时（可能较大）...");
+
+            File[] entries = zTargetDir.listFiles();
+            if (entries == null) return false;
+            int total = entries.length;
+            int done = 0;
+            for (File entry : entries) {
+                String name = entry.getName();
+                // 排除大的临时文件、缓存、home目录（home里已有容器数据）
+                if (name.equals("home") || name.equals(".cache") || name.equals(".tmp")
+                        || name.equals("tmp") || name.equals("proc") || name.equals("sys")
+                        || name.equals("dev") || name.equals("data") || name.equals("sdcard")) {
+                    done++;
+                    continue;
+                }
+                File destEntry = new File(zdriveDest, name);
+                try {
+                    if (entry.isDirectory()) {
+                        copyDirectorySimple(entry, destEntry);
+                    } else {
+                        FileUtils.copy(entry, destEntry);
+                    }
+                } catch (Exception e) {
+                    // 单个文件失败不阻塞
+                }
+                done++;
+                int p = 38 + (int) ((done / (float) Math.max(1, total)) * 2);
+                callback.onProgress(Math.min(40, p), "复制Z盘运行时: " + name);
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private static void copyDirectorySimple(File src, File dest) {
         if (!src.isDirectory()) return;
         if (!dest.exists()) dest.mkdirs();
@@ -1507,6 +1697,51 @@ public class GameRestorePackageManager {
         try (PrintWriter pw = new PrintWriter(new FileOutputStream(file, false))) {
             pw.print(content);
         } catch (Exception ignored) {}
+    }
+
+    /**
+     * BUG5：重建z:符号链接，指向新容器根目录的上两级（Wine运行时目录）。
+     * 导入时旧z:链接指向旧设备绝对路径，必须用新容器的getRootDir()重建。
+     * 同时确保c:符号链接正确指向../drive_c。
+     */
+    private static void rebuildZDriveSymlink(File wineDir, File newContainerDir) {
+        try {
+            File dosdevices = new File(wineDir, "dosdevices");
+            if (!dosdevices.exists()) dosdevices.mkdirs();
+
+            // z: -> newContainerDir/../..
+            File zLink = new File(dosdevices, "z:");
+            if (zLink.exists() || Files.isSymbolicLink(zLink.toPath())) {
+                deleteRecursiveQuiet(zLink);
+            }
+            String zTarget = newContainerDir.getPath() + "/../..";
+            try {
+                Files.createSymbolicLink(zLink.toPath(), java.nio.file.Paths.get(zTarget));
+            } catch (Exception e) {
+                // 创建符号链接失败时退化为目录
+                zLink.mkdirs();
+            }
+
+            // c: -> ../drive_c（确保正确）
+            File cLink = new File(dosdevices, "c:");
+            boolean cLinkOk = false;
+            try {
+                if (Files.isSymbolicLink(cLink.toPath())) {
+                    java.nio.file.Path target = Files.readSymbolicLink(cLink.toPath());
+                    if ("../drive_c".equals(target.toString())) cLinkOk = true;
+                }
+            } catch (Exception ignored) {}
+            if (!cLinkOk) {
+                if (cLink.exists()) deleteRecursiveQuiet(cLink);
+                try {
+                    Files.createSymbolicLink(cLink.toPath(), java.nio.file.Paths.get("../drive_c"));
+                } catch (Exception e) {
+                    if (!cLink.exists()) cLink.mkdirs();
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private static void deleteRecursiveQuiet(File file) {
