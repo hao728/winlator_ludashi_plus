@@ -8,7 +8,9 @@
 
 Winlator is an Android application that lets you run Windows (x86\_64) applications with Wine. It supports standard `x86_64` containers using Box86/Box64, as well as `Arm64EC` containers which utilize FEXCore (for 64/32-bit) or an optional WowBox64 (for 32-bit).
 
-This is a fork of the **Winlator Bionic** project by [Pipetto-crypto](https://github.com/Pipetto-crypto/winlator).
+This is a fork of the **Winlator Bionic** project by [Pipetto-crypto](https://github.com/Pipetto-crypto/winlator), with Ludashi performance build variants maintained by [squalle0nhart](https://github.com/squalle0nhart/winlator_ludashi_plus).
+
+> **本仓库为 winlator_ludashi_plus 的中文增强分支**，fork 自 [squalle0nhart/winlator_ludashi_plus](https://github.com/squalle0nhart/winlator_ludashi_plus)。相对上游的改动：xxx（汉化内容 / 构建调整，请按实际情况补充）。
 
 ## APK Build Explanations
 
@@ -39,7 +41,7 @@ password). Release builds require `Untitled.jks` and signing credentials.
 
 # Installation
 
-1.  Download and install the latest APK from this repository's [Releases section](https://github.com/StevenMXZ/Winlator-Ludashi/releases) (choose your preferred build: `dev-vanilla`, `ludashi`, or `redmagic`).
+1.  Download and install the latest APK from this repository's [Releases section](https://github.com/mihsian77/winlator_ludashi_plus/releases) (choose your preferred build: `dev-vanilla`, `ludashi`, or `redmagic`).
 2.  Launch the app and wait for the installation process to finish.
 
 # Useful Tips
