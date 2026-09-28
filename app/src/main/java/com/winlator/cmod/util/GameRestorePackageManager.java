@@ -420,6 +420,15 @@ public class GameRestorePackageManager {
             newContainer.saveData();
             callback.onProgress(50, "容器已保存");
 
+            // BUG1修复：将新创建的容器注册到 ContainerManager 内存列表，
+            // 否则 manager.getContainers() 不包含新容器，导致导入后UI列表/容器查找失效。
+            // maxContainerId 已是本次 newId（getNextContainerId 时取自磁盘最大值+1），
+            // 加入列表后若后续复用同一 manager 实例也不会重复分配该 id。
+            try {
+                manager.getContainers().add(newContainer);
+            } catch (Exception ignored) {
+            }
+
             // v3：检查非Wine依赖，缺失时通过onWarning报告
             checkAndReportDependencies(context, metadata, callback);
 
@@ -815,13 +824,21 @@ public class GameRestorePackageManager {
             if (!vkApiVer.isEmpty()) sb.append(" (Vulkan ").append(vkApiVer).append(')');
             sb.append('\n');
         }
-        // BUG1：Vulkan驱动版本（如turnip26.2.0）
+        // BUG2修复：Vulkan驱动版本（如turnip26.2.0）；version为空但驱动为turnip时显示"内置"
         if (!vkDriverVer.isEmpty()) {
             sb.append("• Vulkan驱动: ").append(vkDriverVer).append('\n');
+        } else if (info.graphicsDriver != null
+                && (info.graphicsDriver.contains("turnip") || info.graphicsDriver.contains("freedreno"))) {
+            sb.append("• Vulkan驱动: 内置\n");
         }
-        // BUG1：Vulkan Wrapper（graphicsWrapper，默认wrapper不显示）
-        if (isNonDefault(info.graphicsWrapper, Container.DEFAULT_GRAPHICS_WRAPPER)) {
-            sb.append("• Vulkan Wrapper: ").append(info.graphicsWrapper).append('\n');
+        // BUG2修复：Vulkan Wrapper始终显示（非空即显示），默认wrapper标注"(Current)"
+        String gw = info.graphicsWrapper;
+        if (isNotEmpty(gw)) {
+            if (Container.DEFAULT_GRAPHICS_WRAPPER.equals(gw)) {
+                sb.append("• Vulkan Wrapper: Wrapper (Current)\n");
+            } else {
+                sb.append("• Vulkan Wrapper: ").append(gw).append('\n');
+            }
         }
         // BUG2：DXWrapper（附DXVK和VKD3D版本）
         String dxvkVer = getKvsValue(info.dxwrapperConfig, "version");
@@ -1203,32 +1220,32 @@ public class GameRestorePackageManager {
     }
 
     /**
-     * BUG4：检查数据包中Wine运行环境的完整性。
+     * BUG4修复：检查数据包中Wine运行环境的完整性（放宽版）。
+     * 导入时 fixWineEnvironment() 会自动补全 drive_c/windows、dosdevices、system.reg、user.reg、
+     * userdef.reg、system.ini、win.ini 等缺失文件/目录（写入最小占位内容），因此此处不再因
+     * 这些非关键文件缺失而误报警告。
      * 返回空字符串表示完整；否则返回警告文本。
      */
     private static String checkWineRuntimeIntegrity(File tempDir) {
         try {
             File wineRuntime = new File(tempDir, "wineruntime");
             if (!wineRuntime.exists() || !wineRuntime.isDirectory()) {
-                return "Wine运行环境不完整，导入后可能无法启动";
+                // wineruntime目录完全缺失才警告（container/registry/单独存在不算Wine运行环境）
+                boolean hasRegistryOnly = new File(tempDir, "container/registry/system.reg").exists()
+                        || new File(tempDir, "container/registry/user.reg").exists();
+                if (!hasRegistryOnly) {
+                    return "Wine运行环境不完整，导入后可能无法启动";
+                }
+                // 仅有注册表而无wineruntime目录：不警告，fixWineEnvironment会补全目录结构
+                return "";
             }
-            // 1. 检查wineruntime/drive_c/windows/目录
-            File driveCWindows = new File(wineRuntime, "drive_c/windows");
-            if (!driveCWindows.exists() || !driveCWindows.isDirectory()) {
-                return "Wine运行环境不完整，导入后可能无法启动";
-            }
-            // 2. 检查wineruntime/dosdevices/目录
-            File dosdevices = new File(wineRuntime, "dosdevices");
-            if (!dosdevices.exists() || !dosdevices.isDirectory()) {
-                return "Wine运行环境不完整，导入后可能无法启动";
-            }
-            // 3. 检查system.reg/user.reg（wineruntime/下或container/registry/下）
-            boolean hasSystemReg = new File(wineRuntime, "system.reg").exists()
-                    || new File(tempDir, "container/registry/system.reg").exists();
-            boolean hasUserReg = new File(wineRuntime, "user.reg").exists()
-                    || new File(tempDir, "container/registry/user.reg").exists();
-            if (!hasSystemReg || !hasUserReg) {
-                return "Wine运行环境不完整，导入后可能无法启动";
+            // wineruntime目录存在即视为基本完整；
+            // drive_c/windows、dosdevices、system.reg/user.reg等缺失时由fixWineEnvironment自动补全，
+            // Wine首次启动也会自动生成 userdef.reg/system.ini/win.ini 等非关键文件。
+            // 仅当目录完全为空时警告
+            String[] entries = wineRuntime.list();
+            if (entries == null || entries.length == 0) {
+                return "Wine运行环境目录为空，导入后可能无法启动";
             }
         } catch (Exception e) {
             return "Wine运行环境不完整，导入后可能无法启动";

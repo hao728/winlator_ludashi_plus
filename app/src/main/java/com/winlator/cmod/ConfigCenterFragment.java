@@ -274,6 +274,25 @@ public class ConfigCenterFragment extends Fragment {
                 }
             }
         }
+
+        // BUG3修复：同时扫描导出目录 GamePackages/ 和 Winlator/ 根目录下的 .grp.zip 数据包
+        // 导出路径为 /Download/Winlator/GamePackages/，之前只扫 Configs/ 导致本地数据包不显示
+        File winlatorRoot = new File(Environment.getExternalStorageDirectory(), "Download/Winlator");
+        File gamePkgDir = new File(winlatorRoot, "GamePackages");
+        collectZipPackages(gamePkgDir, "local", result);
+        // Winlator/ 根目录下散落的 .grp.zip / .zip
+        File[] winlatorRootFiles = winlatorRoot.listFiles();
+        if (winlatorRootFiles != null) {
+            for (File f : winlatorRootFiles) {
+                if (!f.isFile()) continue;
+                String name = f.getName().toLowerCase(Locale.US);
+                if (name.endsWith(".grp.zip") || name.endsWith(".zip")) {
+                    // 避免与 Configs/ 下的重复（同一路径不会重复，但 GamePackages/ 已递归扫过）
+                    collectZipPackage(f, "local", result);
+                }
+            }
+        }
+
         // 按修改时间倒序
         Collections.sort(result, (a, b) -> Long.compare(b.modifiedAt, a.modifiedAt));
         return result;
@@ -846,13 +865,21 @@ public class ConfigCenterFragment extends Fragment {
                 if (!vkApiVer.isEmpty()) sb.append(" (Vulkan ").append(vkApiVer).append(')');
                 sb.append('\n');
             }
-            // BUG1：Vulkan驱动版本（如turnip26.2.0）
+            // BUG2修复：Vulkan驱动版本（如turnip26.2.0）；version为空但驱动为turnip时显示"内置"
+            String gpuDriver = tmp.getGraphicsDriver();
             if (!vkDriverVer.isEmpty()) {
                 sb.append("• Vulkan驱动: ").append(vkDriverVer).append('\n');
+            } else if (gpuDriver != null && (gpuDriver.contains("turnip") || gpuDriver.contains("freedreno"))) {
+                sb.append("• Vulkan驱动: 内置\n");
             }
-            // BUG1：Vulkan Wrapper（graphicsWrapper，默认wrapper不显示）
-            if (isDiff(tmp.getGraphicsWrapper(), Container.DEFAULT_GRAPHICS_WRAPPER)) {
-                sb.append("• Vulkan Wrapper: ").append(tmp.getGraphicsWrapper()).append('\n');
+            // BUG2修复：Vulkan Wrapper始终显示（非空即显示），默认wrapper标注"(Current)"
+            String gw = tmp.getGraphicsWrapper();
+            if (notEmpty(gw)) {
+                if (Container.DEFAULT_GRAPHICS_WRAPPER.equals(gw)) {
+                    sb.append("• Vulkan Wrapper: Wrapper (Current)\n");
+                } else {
+                    sb.append("• Vulkan Wrapper: ").append(gw).append('\n');
+                }
             }
             // BUG2：DXWrapper（附DXVK和VKD3D版本）
             String dxvkVer = kvs(tmp.getDXWrapperConfig(), "version");
@@ -1414,6 +1441,8 @@ public class ConfigCenterFragment extends Fragment {
                                 importProgressDialog = null;
                                 Toast.makeText(ctx, "导入成功！游戏：" + shortcutName, Toast.LENGTH_LONG).show();
                                 tempFile.delete();
+                                // BUG1修复：导入成功后刷新配置中心列表（数据包删除/状态更新）
+                                refreshList();
                             });
                         }
                     }
