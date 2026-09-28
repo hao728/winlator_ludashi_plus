@@ -311,6 +311,32 @@ public class ContainerManager {
         return result;
     }
 
+    /**
+     * P0修复3：导入含Wine运行时的数据包后，补全 system32/syswow64 标准DLL。
+     * 源容器的 system32 可能不完整（导出时未打包全部DLL），这里从已安装Wine版本的
+     * lib/wine 目录复制缺失DLL到新容器。不重新解压容器模板（.wine前缀已由导入流程复制），
+     * 仅补全DLL，避免覆盖已还原的注册表/游戏文件。
+     *
+     * @param wineVersion    容器使用的Wine版本标识符
+     * @param contentsManager 内容管理器（用于定位Wine安装路径）
+     * @param containerDir   新容器根目录
+     * @return true 表示DLL补全流程已执行；false 表示Wine版本未安装等导致跳过
+     */
+    public boolean extractCommonDllsForContainer(String wineVersion, ContentsManager contentsManager, File containerDir) {
+        WineInfo wineInfo = WineInfo.fromIdentifier(context, contentsManager, wineVersion);
+        if (wineInfo == null || wineInfo.path == null || wineInfo.path.isEmpty()) return false;
+        try {
+            if (wineInfo.isArm64EC())
+                extractCommonDlls(wineInfo, "aarch64-windows", "system32", containerDir, null); // arm64ec only
+            else
+                extractCommonDlls(wineInfo, "x86_64-windows", "system32", containerDir, null);
+            extractCommonDlls(wineInfo, "i386-windows", "syswow64", containerDir, null);
+        } catch (Exception e) {
+            return false;
+        }
+        return true;
+    }
+
     public Container getContainerForShortcut(Shortcut shortcut) {
         // Search for the container by its ID
         for (Container container : containers) {

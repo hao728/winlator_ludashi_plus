@@ -3,6 +3,7 @@ package com.winlator.cmod.util;
 import android.content.Context;
 import android.net.Uri;
 import android.os.Environment;
+import android.util.Log;
 
 import com.winlator.cmod.container.Container;
 import com.winlator.cmod.container.ContainerManager;
@@ -355,6 +356,22 @@ public class GameRestorePackageManager {
                     newContainer.setWineVersion(wineVersion);
                 }
             }
+
+            // P0修复1：清除extraData中的安装状态缓存标记，强制目标设备重新安装所有组件。
+            // 这些标记在源设备上表示"已安装/已匹配"，导入后若保留，启动时XServerDisplayActivity
+            // 会据等值比较判定"无需重装"而跳过组件安装；但图形wrapper等库在imagefs/usr/lib下，
+            // 并不随数据包迁移，导致目标设备图形库缺失→Wine崩溃/桌面闪退。
+            // 移除后 container.getExtra(key) 返回空串，与期望配置不等，触发重新安装。
+            // 注意：仅清除安装状态标记，保留用户配置项（graphicsWrapper/useDisplayX/lsfgEnabled/
+            // frameGenBackend/controlsProfile等）。Container无公开getExtraData()，用putExtra(key,null)移除。
+            newContainer.putExtra("dxwrapper", null);
+            newContainer.putExtra("installedGraphicsWrapper", null);
+            newContainer.putExtra("wincomponents", null);
+            newContainer.putExtra("startupSelection", null);
+            newContainer.putExtra("desktopTheme", null);
+            newContainer.putExtra("box64Version", null);
+            newContainer.putExtra("fexcoreVersion", null);
+
             callback.onProgress(25, "容器配置已加载");
 
             // 30-50%：还原Wine运行环境（含子进度）
@@ -401,6 +418,27 @@ public class GameRestorePackageManager {
                         File zTargetDir = new File(newContainerDir.getParentFile().getParentFile(), ".");
                         copyDirectorySimple(zdrivePacked, zTargetDir);
                     }
+
+                    // P0修复2：删除随wineruntime复制过来的源容器原始.desktop文件。
+                    // 源容器Desktop下的旧.desktop会被原样复制到新容器，随后createShortcutFromJson
+                    // 又会按safeName新建一个.desktop；两者文件名不同导致桌面/菜单显示两个重复快捷方式。
+                    File desktopDir = new File(destWineDir, "drive_c/users/" + ImageFs.USER + "/Desktop");
+                    if (desktopDir.exists()) {
+                        File[] oldDesktops = desktopDir.listFiles((dir, name) -> name.toLowerCase(Locale.US).endsWith(".desktop"));
+                        if (oldDesktops != null) {
+                            for (File f : oldDesktops) f.delete();
+                        }
+                    }
+
+                    // P0修复3：即使包含Wine运行时，也要补全 system32/syswow64 标准DLL。
+                    // 源容器的system32可能不完整，从已安装Wine版本的lib/wine目录复制缺失DLL，
+                    // 不重新解压容器模板（.wine前缀已还原），仅补DLL。
+                    try {
+                        manager.extractCommonDllsForContainer(containerWineVersion, contentsManager, newContainerDir);
+                    } catch (Exception e) {
+                        callback.onWarning("系统DLL补全失败: " + e.getMessage());
+                    }
+
                     callback.onProgress(48, "Wine运行环境还原成功");
                 } else {
                     throw new Exception("数据包标记包含Wine运行环境，但未找到wineruntime目录");
@@ -427,6 +465,15 @@ public class GameRestorePackageManager {
             try {
                 manager.getContainers().add(newContainer);
             } catch (Exception ignored) {
+            }
+
+            // P0修复5：激活新容器，更新 ~/xuser 符号链接指向新容器目录。
+            // 否则xuser仍指向旧/默认容器，启动时Wine读写的不是刚导入的容器数据。
+            // 非致命：即使此处失败，启动时也会由ContainerManager修正。
+            try {
+                manager.activateContainer(newContainer);
+            } catch (Exception e) {
+                Log.w("GameRestore", "activateContainer failed, will be corrected at startup: " + e.getMessage());
             }
 
             // v3：检查非Wine依赖，缺失时通过onWarning报告
@@ -1741,8 +1788,10 @@ public class GameRestorePackageManager {
             try {
                 Files.createSymbolicLink(zLink.toPath(), java.nio.file.Paths.get(zTarget));
             } catch (Exception e) {
-                // 创建符号链接失败时退化为目录
-                zLink.mkdirs();
+                // P0修复4：创建符号链接失败时不再退化为空目录。
+                // 若z:变成空目录而非imagefs根，Wine将找不到二进制（wine/server等）而崩溃。
+                // 此处仅记录错误，z:链接缺失时Wine启动阶段会由WineUtils.createDosdevicesSymlinks()重建。
+                Log.w("GameRestore", "z: symlink creation failed, will be rebuilt at startup: " + e.getMessage());
             }
 
             // c: -> ../drive_c（确保正确）

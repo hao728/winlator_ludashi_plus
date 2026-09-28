@@ -48,6 +48,7 @@ import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.text.SimpleDateFormat;
@@ -382,7 +383,33 @@ public class ConfigCenterFragment extends Fragment {
             // BUG2：同目录同名 .png 图标（WolfsDungeon.grp.zip -> WolfsDungeon.png）
             String base = basename(file.getName());
             File icon = new File(file.getParentFile(), base + ".png");
-            if (icon.exists()) e.iconPath = icon.getAbsolutePath();
+            if (icon.exists()) {
+                e.iconPath = icon.getAbsolutePath();
+            } else {
+                // P0修复6：同目录无侧车png时，从ZIP内提取 shortcut/icon.* 到缓存目录显示。
+                // 导出时图标打包在 shortcut/icon.png（或 .jpg/.webp 等）。本方法运行在后台扫描线程，
+                // 此处解压不阻塞UI；显示侧已用 iconFile.exists() 兜底，缓存被系统清理后自动回退首字母图标。
+                Context ctx = getContext();
+                if (ctx != null) {
+                    String iconEntryName = findIconEntryInZip(zf);
+                    if (iconEntryName != null) {
+                        ZipEntry iconEntry = zf.getEntry(iconEntryName);
+                        if (iconEntry != null) {
+                            String ext = iconEntryName.toLowerCase(Locale.US);
+                            ext = ext.substring(ext.lastIndexOf('.'));
+                            File tempIcon = new File(ctx.getCacheDir(),
+                                    "pkg_icon_" + System.currentTimeMillis() + "_" + Math.abs(file.hashCode()) + ext);
+                            try (InputStream zis = zf.getInputStream(iconEntry);
+                                 FileOutputStream fos = new FileOutputStream(tempIcon)) {
+                                byte[] icbuf = new byte[8192];
+                                int icn;
+                                while ((icn = zis.read(icbuf)) > 0) fos.write(icbuf, 0, icn);
+                                e.iconPath = tempIcon.getAbsolutePath();
+                            } catch (Exception ignored) {}
+                        }
+                    }
+                }
+            }
 
             out.add(e);
         } catch (Exception ex) {
@@ -390,6 +417,27 @@ public class ConfigCenterFragment extends Fragment {
         } finally {
             try { if (zf != null) zf.close(); } catch (Exception ignored) {}
         }
+    }
+
+    /**
+     * P0修复6：在已打开的ZIP中查找图标条目。优先 shortcut/icon.png，其次任意 shortcut/icon.*。
+     * @return 命中的ZIP条目名（相对路径），未找到返回 null
+     */
+    private String findIconEntryInZip(ZipFile zf) {
+        String fallback = null;
+        java.util.Enumeration<? extends ZipEntry> entries = zf.entries();
+        while (entries.hasMoreElements()) {
+            ZipEntry ze = entries.nextElement();
+            if (ze.isDirectory()) continue;
+            String name = ze.getName();
+            if (name == null) continue;
+            String lower = name.toLowerCase(Locale.US);
+            if (lower.startsWith("shortcut/icon.")) {
+                if (lower.endsWith(".png")) return name;
+                if (fallback == null) fallback = name;
+            }
+        }
+        return fallback;
     }
 
     private void collectOne(File file, String defaultSource, List<ConfigEntry> out) {
