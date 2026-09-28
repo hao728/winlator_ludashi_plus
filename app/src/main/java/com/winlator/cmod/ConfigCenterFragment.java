@@ -709,6 +709,13 @@ public class ConfigCenterFragment extends Fragment {
             String summary = buildConfigSummary(json);
             root.addView(bodyText(ctx, summary.isEmpty() ? "（全部为默认设置）" : summary));
 
+            // ── 测试环境（设备参考信息，非配置差异；无device信息则不显示该区域）──
+            String testEnv = buildTestEnvironmentInfo(json);
+            if (!testEnv.isEmpty()) {
+                root.addView(sectionTitle(ctx, "测试环境"), topLp(16));
+                root.addView(bodyText(ctx, testEnv));
+            }
+
             // ── 使用说明（notes/description）──
             String notes = json.optString("notes", "");
             if (notes.isEmpty()) notes = json.optString("description", "");
@@ -913,6 +920,38 @@ public class ConfigCenterFragment extends Fragment {
         try {
             String v = new com.winlator.cmod.core.KeyValueSet(config).get(key);
             return v == null ? "" : v;
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /**
+     * 测试环境：设备参考信息（GPU/型号/SOC），非配置差异。
+     * 读取配置 JSON 的 meta.device 或顶层 device 对象；无则返回空串（详情页不显示该区域）。
+     * 格式："GPU型号 / 设备型号（SOC: xxx）"，由调用方加"测试环境"标题。
+     */
+    private String buildTestEnvironmentInfo(JSONObject json) {
+        try {
+            if (json == null) return "";
+            JSONObject device = json.optJSONObject("device");
+            JSONObject meta = json.optJSONObject("meta");
+            if (device == null && meta != null) device = meta.optJSONObject("device");
+            if (device == null) return "";
+
+            String gpu = device.optString("gpu", "");
+            String model = device.optString("model", "");
+            if (model.isEmpty()) model = device.optString("deviceModel", "");
+            String soc = device.optString("soc", "");
+
+            StringBuilder sb = new StringBuilder();
+            if (!gpu.isEmpty()) sb.append(gpu);
+            if (!model.isEmpty()) {
+                if (sb.length() > 0) sb.append(" / ");
+                sb.append(model);
+            }
+            if (sb.length() == 0) return "";
+            if (!soc.isEmpty()) sb.append("（SOC: ").append(soc).append('）');
+            return sb.toString();
         } catch (Exception e) {
             return "";
         }

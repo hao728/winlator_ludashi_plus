@@ -508,8 +508,14 @@ public class GameRestorePackageManager {
             if (iconFiles != null && iconFiles.length > 0) {
                 File iconDir64 = newContainer.getIconsDir(64);
                 if (!iconDir64.exists()) iconDir64.mkdirs();
+                // 修复重复图标：复制后的图标文件名必须与.desktop中Icon=字段一致（safeName）。
+                // Shortcut按Icon=safeName在iconsDir查找safeName.png/.ico，若仍叫icon.png会查找失败，
+                // 导致回退默认图标或被ExeIconExtractor重新覆盖。safeName规则与createShortcutFromJson完全一致。
+                String iconBaseName = (shortcutJson != null) ? shortcutJson.optString("name", gameName) : gameName;
+                String iconSafeName = iconBaseName.replaceAll("[^a-zA-Z0-9\\u4e00-\\u9fa5]", "_");
                 for (File iconFile : iconFiles) {
-                    FileUtils.copy(iconFile, new File(iconDir64, iconFile.getName()));
+                    String ext = getFileExtension(iconFile.getName());
+                    FileUtils.copy(iconFile, new File(iconDir64, iconSafeName + ext));
                 }
             }
             callback.onProgress(90, "快捷方式创建完成");
