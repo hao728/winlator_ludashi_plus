@@ -1509,6 +1509,38 @@ public class ConfigCenterFragment extends Fragment {
         }
         root.addView(bodyText(ctx, gi.toString().trim()));
 
+        // P1修复4：导入前检测同名游戏已存在。遍历所有容器的快捷方式，若发现同名游戏，
+        // 在确认框中黄色警告提示（不阻断导入，仅提醒用户将创建新的独立容器）。
+        if (containerManager == null) {
+            try { containerManager = new ContainerManager(ctx); } catch (Exception ignored) {}
+        }
+        String existingContainerName = null;
+        if (containerManager != null && pkgInfo.gameName != null && !pkgInfo.gameName.isEmpty()) {
+            try {
+                ArrayList<Shortcut> allShortcuts = containerManager.loadShortcuts();
+                if (allShortcuts != null) {
+                    for (Shortcut sc : allShortcuts) {
+                        if (sc != null && sc.name != null
+                                && sc.name.equalsIgnoreCase(pkgInfo.gameName)) {
+                            Container scContainer = sc.container != null ? sc.container
+                                    : containerManager.getContainerById(sc.getContainerId());
+                            existingContainerName = scContainer != null ? scContainer.getName() : "未知容器";
+                            break;
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        if (existingContainerName != null) {
+            TextView dupWarn = new TextView(ctx);
+            dupWarn.setText("⚠ 检测到同名游戏已存在于容器「" + existingContainerName
+                    + "」，导入将创建新的独立容器");
+            dupWarn.setTextColor(0xFFFFB300);
+            dupWarn.setTextSize(12);
+            LinearLayout.LayoutParams dwLp = topLp(8);
+            root.addView(dupWarn, dwLp);
+        }
+
         // ── 包含内容 ──
         root.addView(sectionTitle(ctx, "包含内容"), topLp(14));
         StringBuilder ci = new StringBuilder();
