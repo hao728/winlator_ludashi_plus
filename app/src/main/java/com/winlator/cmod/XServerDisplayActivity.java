@@ -108,6 +108,7 @@ import com.winlator.cmod.widget.TouchpadView;
 import com.winlator.cmod.widget.XServerRendererView;
 import com.winlator.cmod.widget.XServerView;
 import com.winlator.cmod.widget.VulkanXServerView;
+import com.winlator.cmod.widget.FloatingButtons;
 import com.winlator.cmod.ui.FpsLimiterControl;
 import com.winlator.cmod.winhandler.MouseEventFlags;
 import com.winlator.cmod.winhandler.TaskManagerSidebar;
@@ -455,6 +456,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         AppUtils.hideSystemUI(this);
         AppUtils.keepScreenOn(this);
 
+        FloatingButtons.setup(this);
         setContentView(R.layout.xserver_display_activity);
 
         preloaderDialog = new PreloaderDialog(this);
