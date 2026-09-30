@@ -68,27 +68,20 @@ public final class RemoteDriverCatalog {
                         }
                     } catch (Exception ignored) {}
 
-                    // 只取第一个.zip asset，避免同一release重复显示
-                    String downloadUrl = "";
-                    String assetName = "";
-                    for (int j = 0; j < assets.length(); j++) {
+                    // 读取所有.zip asset，每个变体作为独立条目
+                    for (int j = 0; j < assets.length() && accepted < 50; j++) {
                         JSONObject asset = assets.optJSONObject(j);
                         if (asset == null) continue;
-                        String url = asset.optString("browser_download_url", "");
-                        String aname = asset.optString("name", "");
-                        if (!url.isEmpty() && aname.toLowerCase(Locale.ENGLISH).endsWith(".zip")) {
-                            downloadUrl = url;
-                            assetName = aname;
-                            break;
-                        }
+                        String downloadUrl = asset.optString("browser_download_url", "");
+                        String assetName = asset.optString("name", "");
+                        if (downloadUrl.isEmpty() || !assetName.toLowerCase(Locale.ENGLISH).endsWith(".zip")) continue;
+
+                        String name = assetName.replaceFirst("(?i)\\.zip$", "");
+                        if (name.isEmpty()) continue;
+
+                        result.add(new Entry(repo.name, name, downloadUrl, tagName, publishedAt));
+                        accepted++;
                     }
-                    if (downloadUrl.isEmpty()) continue;
-
-                    String name = releaseName.isEmpty() ? assetName.replaceFirst("(?i)\\.zip$", "") : releaseName;
-                    if (name.isEmpty()) continue;
-
-                    result.add(new Entry(repo.name, name, downloadUrl, tagName, publishedAt));
-                    accepted++;
                 }
             } catch (Exception ignored) {
             }
