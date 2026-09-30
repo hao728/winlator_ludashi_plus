@@ -62,6 +62,7 @@ public abstract class WineUtils {
             registryEditor.setStringValue("Software\\Classes\\.reg", null, "REGfile");
             registryEditor.setStringValue("Software\\Classes\\.reg", "Content Type", "application/reg");
             registryEditor.setStringValue("Software\\Classes\\REGfile\\Shell\\Open\\command", null, "C:\\windows\\regedit.exe /C \"%1\"");
+            registryEditor.setStringValue("Software\\Wine\\Drives", "X:Type", "cdrom");
 
             registryEditor.setStringValue("Software\\Classes\\dllfile\\DefaultIcon", null, "shell32.dll,-154");
             registryEditor.setStringValue("Software\\Classes\\lnkfile\\DefaultIcon", null, "shell32.dll,-30");
@@ -77,6 +78,7 @@ public abstract class WineUtils {
             for (String name : direct3dLibs) registryEditor.setStringValue(dllOverridesKey, name, "native,builtin");
             for (String name : xinputLibs) registryEditor.setStringValue(dllOverridesKey, name, "builtin,native");
             setWindowMetrics(registryEditor);
+            registryEditor.setDwordValue("Control Panel\\Desktop", "LogPixels", 120);
             if (wineInfo.isArm64EC() && !GPUInformation.getRenderer(null,null).contains("Mali")) for(String name: openglLibs) registryEditor.setStringValue(dllOverridesKey, name, "native,builtin");
         }
     }

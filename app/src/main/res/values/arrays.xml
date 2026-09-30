@@ -32,6 +32,7 @@
         <item>System</item>
         <item>v863</item>
         <item>turnip26.2.0</item>
+        <item>turnip-26.2.0-b9</item>
     </string-array>
     <string-array name="audio_driver_entries">
         <item>ALSA</item>
