@@ -925,12 +925,10 @@ public class ConfigCenterFragment extends Fragment {
                 if (!vkApiVer.isEmpty()) sb.append(" (Vulkan ").append(vkApiVer).append(')');
                 sb.append('\n');
             }
-            // Vulkan驱动：有版本显示版本，无版本显示驱动名称（不显示"内置"）
-            String gpuDriver = tmp.getGraphicsDriver();
+            // Vulkan驱动：仅当 graphicsDriverConfig.version（turnip版本号）非空时显示。
+            // zink 是 OpenGL 驱动，已在上一行 OpenGL驱动 中展示，不应出现在 Vulkan 驱动行。
             if (!vkDriverVer.isEmpty()) {
                 sb.append("• Vulkan驱动: ").append(vkDriverVer).append('\n');
-            } else if (gpuDriver != null && !gpuDriver.isEmpty()) {
-                sb.append("• Vulkan驱动: ").append(gpuDriver).append('\n');
             }
             // BUG2修复：Vulkan Wrapper始终显示（非空即显示），默认wrapper标注"(Current)"
             String gw = tmp.getGraphicsWrapper();
