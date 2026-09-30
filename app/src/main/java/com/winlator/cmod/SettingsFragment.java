@@ -361,6 +361,7 @@ public class SettingsFragment extends Fragment {
                 if (position == 0) etDownloadableContentsURL.setText(ContentsManager.REMOTE_PROFILES);
                 else if (position == 1) etDownloadableContentsURL.setText(ContentsManager.REMOTE_PROFILES_NICHOLASX417);
                 else if (position == 2) etDownloadableContentsURL.setText(ContentsManager.REMOTE_PROFILES_THE412BANNER);
+                else if (position == 3) etDownloadableContentsURL.setText(ContentsManager.ARIHANY_REPO_URL);
             }
 
             @Override
@@ -403,7 +404,7 @@ public class SettingsFragment extends Fragment {
                     break;
                 case 3:
                     selectedContentsUrl = etDownloadableContentsURL.getText().toString().trim();
-                    if (selectedContentsUrl.isEmpty()) selectedContentsUrl = ContentsManager.REMOTE_PROFILES;
+                    if (selectedContentsUrl.isEmpty()) selectedContentsUrl = ContentsManager.ARIHANY_REPO_URL;
                     break;
                 default:
                     selectedContentsUrl = ContentsManager.REMOTE_PROFILES;

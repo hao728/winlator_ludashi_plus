@@ -24,9 +24,10 @@ import java.util.Map;
 
 public class ContentsManager {
     public static final String PROFILE_NAME = "profile.json";
-    public static final String REMOTE_PROFILES = "https://raw.githubusercontent.com/StevenMXZ/Winlator-Contents/main/contents.json";
+    public static final String REMOTE_PROFILES = "https://raw.githubusercontent.com/The412Banner/winlator-contents/main/contents.json";
     public static final String REMOTE_PROFILES_NICHOLASX417 = "https://raw.githubusercontent.com/nicholasx417/WinNative-Components/refs/heads/main/contents.json";
     public static final String REMOTE_PROFILES_THE412BANNER = "https://raw.githubusercontent.com/The412Banner/winlator-contents/main/contents.json";
+    public static final String ARIHANY_REPO_URL = "https://raw.githubusercontent.com/Arihany/WinlatorWCPHub/refs/heads/main/pack.json";
 
     public static int getRemoteProfilesSource(String url) {
         if (REMOTE_PROFILES.equals(url)) return 0;
