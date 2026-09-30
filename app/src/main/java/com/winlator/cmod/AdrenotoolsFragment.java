@@ -149,7 +149,7 @@ public class AdrenotoolsFragment extends Fragment {
     private TextView createTab(String text, boolean selected) {
         TextView tab = new TextView(getContext());
         tab.setText(text);
-        tab.setTextSize(14sp);
+        tab.setTextSize(14);
         tab.setGravity(Gravity.CENTER);
         tab.setPadding(20, 10, 20, 10);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
