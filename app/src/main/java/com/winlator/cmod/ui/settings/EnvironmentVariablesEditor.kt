@@ -79,7 +79,7 @@ val knownEnvironmentVariables = listOf(
     EnvVariableSpec("WRAPPER_DMAHEAP_CACHED", EnvValueKind.CHECKBOX, listOf("0", "1")),
     EnvVariableSpec("WINEVMEMMAXSIZE", EnvValueKind.NUMBER),
     EnvVariableSpec("vblank_mode", EnvValueKind.SELECT, listOf("0", "1", "2", "3", "4")),
-    EnvVariableSpec("FD_MESA_DEBUG", EnvValueKind.SELECT, listOf("hiprio", "nobatch", "nosync", "nir", "perf", ""))
+    EnvVariableSpec("FD_MESA_DEBUG", EnvValueKind.SELECT, listOf("hiprio", "nobatch", "nosync", "nir", "perf"))
 )
 
 fun parseEnvironmentVariables(raw: String): List<EditableEnvVariable> {

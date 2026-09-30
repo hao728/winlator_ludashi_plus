@@ -612,9 +612,19 @@ private fun AdrenoToolsDriverList(
 
     LaunchedEffect(Unit) {
         loading = true
-        val loaded = RemoteDriverCatalog.load(context)
-        drivers = loaded
-        loading = false
+        kotlin.concurrent.thread {
+            try {
+                val loaded = RemoteDriverCatalog.load(context)
+                (context as? android.app.Activity)?.runOnUiThread {
+                    drivers = loaded
+                    loading = false
+                }
+            } catch (e: Exception) {
+                (context as? android.app.Activity)?.runOnUiThread {
+                    loading = false
+                }
+            }
+        }
     }
 
     val repos = remember(drivers) {
