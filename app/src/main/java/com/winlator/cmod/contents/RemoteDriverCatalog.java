@@ -50,7 +50,7 @@ public final class RemoteDriverCatalog {
                 if (!response.isSuccessful() || response.body() == null) continue;
                 JSONArray releases = new JSONArray(response.body().string());
                 int accepted = 0;
-                for (int i = 0; i < releases.length() && accepted < 20; i++) {
+                for (int i = 0; i < releases.length() && accepted < 50; i++) {
                     JSONObject release = releases.optJSONObject(i);
                     if (release == null) continue;
                     JSONArray assets = release.optJSONArray("assets");
