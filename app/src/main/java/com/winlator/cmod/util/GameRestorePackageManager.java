@@ -1301,10 +1301,10 @@ public class GameRestorePackageManager {
     }
 
     /**
-     * BUG4修复：检查数据包中Wine运行环境的完整性（放宽版）。
-     * 导入时 fixWineEnvironment() 会自动补全 drive_c/windows、dosdevices、system.reg、user.reg、
-     * userdef.reg、system.ini、win.ini 等缺失文件/目录（写入最小占位内容），因此此处不再因
-     * 这些非关键文件缺失而误报警告。
+     * P2修复7：增强Wine运行环境完整性检查。
+     * 当 containsWineRuntime=true 时，除检查 wineruntime/ 目录存在非空外，
+     * 还校验关键目录和注册表文件是否存在，缺失项追加到警告文本中。
+     * 仅警告不阻断导入（fixWineEnvironment 会补全非关键文件）。
      * 返回空字符串表示完整；否则返回警告文本。
      */
     private static String checkWineRuntimeIntegrity(File tempDir) {
@@ -1320,13 +1320,35 @@ public class GameRestorePackageManager {
                 // 仅有注册表而无wineruntime目录：不警告，fixWineEnvironment会补全目录结构
                 return "";
             }
-            // wineruntime目录存在即视为基本完整；
-            // drive_c/windows、dosdevices、system.reg/user.reg等缺失时由fixWineEnvironment自动补全，
-            // Wine首次启动也会自动生成 userdef.reg/system.ini/win.ini 等非关键文件。
-            // 仅当目录完全为空时警告
             String[] entries = wineRuntime.list();
             if (entries == null || entries.length == 0) {
                 return "Wine运行环境目录为空，导入后可能无法启动";
+            }
+
+            // P2修复7：校验关键目录和注册表文件，缺失项追加到警告
+            StringBuilder missing = new StringBuilder();
+            if (!new File(wineRuntime, "drive_c").isDirectory()) {
+                missing.append("缺少 drive_c 目录; ");
+            } else {
+                if (!new File(wineRuntime, "drive_c/windows").isDirectory()) {
+                    missing.append("缺少 windows 目录; ");
+                }
+                if (!new File(wineRuntime, "drive_c/windows/system32").isDirectory()) {
+                    missing.append("缺少 system32 目录; ");
+                }
+            }
+            if (!new File(wineRuntime, "dosdevices").isDirectory()) {
+                missing.append("缺少 dosdevices 目录; ");
+            }
+            // 注册表：system.reg 位于 .wine 根目录（即 wineruntime/ 下）
+            if (!new File(wineRuntime, "system.reg").exists()
+                    && !new File(wineRuntime, "user.reg").exists()) {
+                missing.append("缺少 system.reg/user.reg 注册表; ");
+            }
+
+            if (missing.length() > 0) {
+                return "Wine运行环境可能不完整：" + missing.toString().trim()
+                        + "（导入后将自动补全，但仍可能影响首次启动）";
             }
         } catch (Exception e) {
             return "Wine运行环境不完整，导入后可能无法启动";
