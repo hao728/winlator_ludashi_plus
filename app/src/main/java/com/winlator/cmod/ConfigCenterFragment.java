@@ -772,7 +772,9 @@ public class ConfigCenterFragment extends Fragment {
             root.addView(header);
 
             // ── 基本信息行：修改时间 · 文件大小 · 包含图标 ──
-            String iconMark = json.optString("iconFile", "").isEmpty() ? "" : "  ·  包含图标";
+            // P2修复6：判定口径统一为 e.iconPath（与头部图标渲染逻辑一致），
+            // 而非 metadata.json 中的 iconFile 字段（侧车.png或ZIP解压缓存均不写入该字段）。
+            String iconMark = (e.iconPath != null && !e.iconPath.isEmpty()) ? "  ·  包含图标" : "";
             TextView metaLine = new TextView(ctx);
             metaLine.setText(formatTime(e.modifiedAt) + "  ·  " + formatSize(e.size) + iconMark);
             metaLine.setTextSize(12);
