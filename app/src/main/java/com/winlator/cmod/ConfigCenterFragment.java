@@ -913,12 +913,12 @@ public class ConfigCenterFragment extends Fragment {
                 if (!vkApiVer.isEmpty()) sb.append(" (Vulkan ").append(vkApiVer).append(')');
                 sb.append('\n');
             }
-            // BUG2修复：Vulkan驱动版本（如turnip26.2.0）；version为空但驱动为turnip时显示"内置"
+            // Vulkan驱动：有版本显示版本，无版本显示驱动名称（不显示"内置"）
             String gpuDriver = tmp.getGraphicsDriver();
             if (!vkDriverVer.isEmpty()) {
                 sb.append("• Vulkan驱动: ").append(vkDriverVer).append('\n');
-            } else if (gpuDriver != null && (gpuDriver.contains("turnip") || gpuDriver.contains("freedreno"))) {
-                sb.append("• Vulkan驱动: 内置\n");
+            } else if (gpuDriver != null && !gpuDriver.isEmpty()) {
+                sb.append("• Vulkan驱动: ").append(gpuDriver).append('\n');
             }
             // BUG2修复：Vulkan Wrapper始终显示（非空即显示），默认wrapper标注"(Current)"
             String gw = tmp.getGraphicsWrapper();

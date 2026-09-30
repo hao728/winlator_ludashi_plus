@@ -606,12 +606,27 @@ private fun AdrenoToolsDriverList(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var drivers by remember { mutableStateOf<List<RemoteDriverCatalog.Entry>>(emptyList()) }
+    var installedDrivers by remember { mutableStateOf<List<String>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var selectedRepo by remember { mutableStateOf("全部") }
     var installingUrl by remember { mutableStateOf<String?>(null) }
+    var deletingId by remember { mutableStateOf<String?>(null) }
+
+    fun refreshInstalled() {
+        kotlin.concurrent.thread {
+            try {
+                val manager = AdrenotoolsManager(context)
+                val installed = manager.enumarateInstalledDrivers()
+                (context as? android.app.Activity)?.runOnUiThread {
+                    installedDrivers = installed
+                }
+            } catch (e: Exception) {}
+        }
+    }
 
     LaunchedEffect(Unit) {
         loading = true
+        refreshInstalled()
         kotlin.concurrent.thread {
             try {
                 val loaded = RemoteDriverCatalog.load(context)
@@ -633,6 +648,13 @@ private fun AdrenoToolsDriverList(
 
     val filtered = remember(drivers, selectedRepo) {
         if (selectedRepo == "全部") drivers else drivers.filter { it.repository == selectedRepo }
+    }
+
+    // 已安装驱动（不在在线列表中的也显示）
+    val installedOnly = remember(installedDrivers, filtered) {
+        installedDrivers.filter { id ->
+            filtered.none { it.name.equals(id, ignoreCase = true) || it.name.contains(id, ignoreCase = true) }
+        }
     }
 
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -664,17 +686,79 @@ private fun AdrenoToolsDriverList(
             Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                 androidx.compose.material3.CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp)
             }
-        } else if (filtered.isEmpty()) {
-            Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface) {
-                Text("暂无可用驱动", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
         } else {
-            filtered.forEach { driver ->
-                val isInstalling = installingUrl == driver.url
+            // 已安装驱动区域
+            if (installedDrivers.isNotEmpty()) {
+                Text("已安装 (${installedDrivers.size})", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            }
+            installedDrivers.forEach { id ->
+                val isDeleting = deletingId == id
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
                     color = MaterialTheme.colorScheme.surface
+                ) {
+                    Row(
+                        Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(id, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                Spacer(Modifier.width(6.dp))
+                                Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                                    Text("已安装", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp))
+                                }
+                            }
+                        }
+                        if (isDeleting) {
+                            androidx.compose.material3.CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                        } else {
+                            TextButton(onClick = {
+                                androidx.appcompat.app.AlertDialog.Builder(context)
+                                    .setTitle("删除驱动")
+                                    .setMessage("确定要删除驱动「$id」吗？使用该驱动的容器将回退到系统驱动。")
+                                    .setPositiveButton("删除") { _, _ ->
+                                        deletingId = id
+                                        kotlin.concurrent.thread {
+                                            try {
+                                                val manager = AdrenotoolsManager(context)
+                                                manager.removeDriver(id)
+                                                (context as? android.app.Activity)?.runOnUiThread {
+                                                    deletingId = null
+                                                    refreshInstalled()
+                                                    android.widget.Toast.makeText(context, "已删除: $id", android.widget.Toast.LENGTH_SHORT).show()
+                                                }
+                                            } catch (e: Exception) {
+                                                (context as? android.app.Activity)?.runOnUiThread {
+                                                    deletingId = null
+                                                    android.widget.Toast.makeText(context, "删除失败", android.widget.Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        }
+                                    }
+                                    .setNegativeButton("取消", null)
+                                    .show()
+                            }) {
+                                Text("删除", color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 在线驱动区域
+            if (filtered.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text("在线驱动 (${filtered.size})", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+            }
+            filtered.forEach { driver ->
+                val isInstalled = installedDrivers.any { it.equals(driver.name, ignoreCase = true) || driver.name.contains(it, ignoreCase = true) }
+                val isInstalling = installingUrl == driver.url
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (isInstalled) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
                 ) {
                     Row(
                         Modifier.padding(14.dp),
@@ -705,10 +789,11 @@ private fun AdrenoToolsDriverList(
                         }
                         if (isInstalling) {
                             androidx.compose.material3.CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                        } else if (isInstalled) {
+                            Text("已安装", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                         } else {
                             TextButton(onClick = {
                                 installingUrl = driver.url
-                                // 下载并安装驱动
                                 kotlin.concurrent.thread {
                                     try {
                                         val tmpFile = java.io.File(context.cacheDir, "driver_${System.currentTimeMillis()}.zip")
@@ -719,6 +804,7 @@ private fun AdrenoToolsDriverList(
                                             tmpFile.delete()
                                             (context as? android.app.Activity)?.runOnUiThread {
                                                 installingUrl = null
+                                                refreshInstalled()
                                                 if (installed.isNotEmpty()) {
                                                     android.widget.Toast.makeText(context, "已安装: $installed", android.widget.Toast.LENGTH_SHORT).show()
                                                 } else {
@@ -742,6 +828,12 @@ private fun AdrenoToolsDriverList(
                             }
                         }
                     }
+                }
+            }
+
+            if (installedDrivers.isEmpty() && filtered.isEmpty()) {
+                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface) {
+                    Text("暂无可用驱动", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
