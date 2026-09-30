@@ -25,6 +25,7 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Executors;
 
@@ -83,6 +84,16 @@ public class DriverDownloadDialog {
                     
                     String rawName = releaseObj.optString("name", releaseObj.optString("tag_name", "Unknown Driver"));
                     String cleanName = cleanDriverName(rawName);
+                    String tagName = releaseObj.optString("tag_name", "");
+                    long publishedAt = 0;
+                    try {
+                        String published = releaseObj.optString("published_at", "");
+                        if (!published.isEmpty()) {
+                            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US);
+                            sdf.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+                            publishedAt = sdf.parse(published).getTime();
+                        }
+                    } catch (Exception ignored) {}
                     
                     String description = releaseObj.optString("body", "");
                     
@@ -105,7 +116,7 @@ public class DriverDownloadDialog {
                     }
 
                     if (!assets.isEmpty()) {
-                        releases.add(new ReleaseItem(cleanName, description, assets));
+                        releases.add(new ReleaseItem(cleanName, description, tagName, publishedAt, assets));
                     }
                 }
             } catch (Exception e) {
@@ -183,14 +194,19 @@ public class DriverDownloadDialog {
             Toast.makeText(context, "No drivers found.", Toast.LENGTH_LONG).show();
             return;
         }
+        // 按发布时间降序排序
+        Collections.sort(releases, (a, b) -> Long.compare(b.publishedAt, a.publishedAt));
         recyclerView.setAdapter(new DriverAdapter(releases));
     }
 
     
     private static class ReleaseItem {
-        String name, description;
+        String name, description, tagName;
+        long publishedAt;
         List<DriverAsset> assets;
-        ReleaseItem(String n, String d, List<DriverAsset> a) { name = n; description = d; assets = a; }
+        ReleaseItem(String n, String d, String t, long p, List<DriverAsset> a) {
+            name = n; description = d; tagName = t; publishedAt = p; assets = a;
+        }
     }
     
     private static class DriverAsset {
@@ -213,22 +229,38 @@ public class DriverDownloadDialog {
         public void onBindViewHolder(ViewHolder holder, int position) {
             ReleaseItem item = list.get(position);
             
-            
             holder.title.setText(item.name);
             
-            
-            if (item.assets.size() > 1) {
-                holder.subtitle.setText(item.assets.size() + " variants available (Click to choose)");
-            } else {
-                
-                String shortDesc = item.description.replace("\n", " ").trim();
-                if (shortDesc.length() > 50) shortDesc = shortDesc.substring(0, 50) + "...";
-                if (shortDesc.isEmpty()) shortDesc = "No description";
-                holder.subtitle.setText(shortDesc);
+            // 副标题：发布时间 + tag + 变体数量
+            StringBuilder subtitle = new StringBuilder();
+            if (item.publishedAt > 0) {
+                subtitle.append(formatTime(item.publishedAt));
             }
+            if (item.tagName != null && !item.tagName.isEmpty()) {
+                if (subtitle.length() > 0) subtitle.append(" · ");
+                subtitle.append(item.tagName);
+            }
+            if (item.assets.size() > 1) {
+                if (subtitle.length() > 0) subtitle.append(" · ");
+                subtitle.append(item.assets.size()).append(" variants");
+            }
+            if (subtitle.length() == 0) {
+                subtitle.setText("No info");
+            }
+            holder.subtitle.setText(subtitle.toString());
 
             holder.actionButton.setImageResource(android.R.drawable.stat_sys_download);
             holder.actionButton.setOnClickListener(v -> onDownloadClick(item));
+        }
+        
+        private String formatTime(long timestamp) {
+            long diff = System.currentTimeMillis() - timestamp;
+            long days = diff / (1000 * 60 * 60 * 24);
+            if (days < 1) return "今天";
+            if (days < 2) return "昨天";
+            if (days < 30) return days + "天前";
+            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("MM-dd", java.util.Locale.getDefault());
+            return sdf.format(new java.util.Date(timestamp));
         }
 
         @Override
