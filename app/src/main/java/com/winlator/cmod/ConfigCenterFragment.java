@@ -983,6 +983,29 @@ public class ConfigCenterFragment extends Fragment {
             if (isDiff(tmp.getAudioDriver(), Container.DEFAULT_AUDIO_DRIVER)) {
                 sb.append("• 音频驱动: ").append(tmp.getAudioDriver()).append('\n');
             }
+            // P2修复5：Windows组件（wincomponents），与默认值不同时列出已启用项
+            String wincomp = tmp.getWinComponents();
+            if (notEmpty(wincomp) && !wincomp.equals(Container.DEFAULT_WINCOMPONENTS)) {
+                StringBuilder enabled = new StringBuilder();
+                try {
+                    com.winlator.cmod.core.KeyValueSet kvs = new com.winlator.cmod.core.KeyValueSet(wincomp);
+                    com.winlator.cmod.core.KeyValueSet defKvs = new com.winlator.cmod.core.KeyValueSet(Container.DEFAULT_WINCOMPONENTS);
+                    for (String[] pair : kvs) {
+                        String key = pair[0];
+                        String val = pair.length > 1 ? pair[1] : "";
+                        if ("1".equals(val)) {
+                            String defVal = defKvs.get(key);
+                            if (!"1".equals(defVal)) {
+                                if (enabled.length() > 0) enabled.append(", ");
+                                enabled.append(key);
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {}
+                sb.append("• Windows组件: ");
+                sb.append(enabled.length() > 0 ? enabled.toString() : "已自定义");
+                sb.append('\n');
+            }
             if (notEmpty(tmp.getEnvVars()) && !tmp.getEnvVars().equals(Container.DEFAULT_ENV_VARS)) {
                 sb.append("• 环境变量: 已自定义\n");
             }
