@@ -1096,8 +1096,6 @@ public class GameRestorePackageManager {
             // BUG1：渲染器与Vulkan Wrapper
             info.rendererNative = metadata.optBoolean("rendererNative", false);
             info.graphicsWrapper = metadata.optString("graphicsWrapper", Container.DEFAULT_GRAPHICS_WRAPPER);
-            // BUG5：是否包含Z盘Wine运行时
-            info.containsZDrive = metadata.optBoolean("containsZDrive", false);
 
             JSONArray components = metadata.optJSONArray("requiredComponents");
             if (components != null) {
