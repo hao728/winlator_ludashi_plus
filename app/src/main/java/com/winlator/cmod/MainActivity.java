@@ -61,6 +61,7 @@ import com.winlator.cmod.store.GogMainActivity;
 import com.winlator.cmod.store.SteamMainActivity;
 import com.winlator.cmod.xenvironment.ImageFsInstaller;
 import com.winlator.cmod.services.NotificationService;
+import com.winlator.cmod.util.CrashLogger;
 
 import java.io.File;
 import java.util.List;
@@ -105,6 +106,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        CrashLogger.init(this);
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
 
         // Persist the default value on first run so all other components
