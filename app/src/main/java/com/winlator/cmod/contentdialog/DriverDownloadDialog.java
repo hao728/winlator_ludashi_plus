@@ -245,7 +245,7 @@ public class DriverDownloadDialog {
                 subtitle.append(item.assets.size()).append(" variants");
             }
             if (subtitle.length() == 0) {
-                subtitle.setText("No info");
+                subtitle.append("No info");
             }
             holder.subtitle.setText(subtitle.toString());
 
