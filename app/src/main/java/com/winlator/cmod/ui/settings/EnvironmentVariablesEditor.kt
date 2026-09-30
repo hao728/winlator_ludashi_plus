@@ -54,7 +54,7 @@ val knownEnvironmentVariables = listOf(
     EnvVariableSpec("TU_DEBUG", EnvValueKind.MULTI, listOf("forcecb", "nocb", "deck_emu", "startup", "nir", "nobin", "sysmem", "gmem", "forcebin", "layout", "noubwc", "nomultipos", "nolrz", "nolrzfc", "perf", "perfc", "flushall", "syncdraw", "push_consts_per_stage", "rast_order", "unaligned_store", "log_skip_gmem_ops", "dynamic", "bos", "3d_load", "fdm", "noconform", "rd")),
     EnvVariableSpec("DXVK_HUD", EnvValueKind.MULTI, listOf("scale=0.5", "scale=0.7", "opacity=0.5", "opacity=0.7", "devinfo", "fps", "frametimes", "submissions", "drawcalls", "pipelines", "descriptors", "memory", "gpuload", "version", "api", "cs", "compiler", "samplers")),
     EnvVariableSpec("MESA_EXTENSION_MAX_YEAR", EnvValueKind.SELECT, listOf("2001", "2003", "2008", "2015", "2026")),
-    EnvVariableSpec("VKD3D_CONFIG", EnvValueKind.SELECT_MULTIPLE, listOf("vk_debug", "skip_application_workarounds", "nodxr", "dxr", "dxr12", "force_static_cbv", "single_queue", "no_upload_hvv", "force_host_cached", "no_invariant_position", "pipeline_library_app_cache")),
+    EnvVariableSpec("VKD3D_CONFIG", EnvValueKind.MULTI, listOf("vk_debug", "skip_application_workarounds", "nodxr", "dxr", "dxr12", "force_static_cbv", "single_queue", "no_upload_hvv", "force_host_cached", "no_invariant_position", "pipeline_library_app_cache")),
     EnvVariableSpec("VKD3D_SHADER_MODEL", EnvValueKind.SELECT, listOf("6_0", "6_1", "6_2", "6_3", "6_4", "6_5", "6_6", "6_7")),
     EnvVariableSpec("WRAPPER_BLIT", EnvValueKind.CHECKBOX, listOf("0", "1")),
     EnvVariableSpec("FD_DEV_FEATURES", EnvValueKind.MULTI, listOf("enable_tp_ubwc_flag_hint=1", "storage_8bit=1")),
