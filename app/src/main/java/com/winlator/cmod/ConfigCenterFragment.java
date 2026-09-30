@@ -1270,11 +1270,28 @@ public class ConfigCenterFragment extends Fragment {
             return;
         }
         final Container targetRef = target;
+        final Shortcut shortcutRef = shortcut;
         executor.execute(() -> {
             try {
                 String srcText = FileUtils.readString(config.file);
                 if (srcText == null) throw new Exception("配置文件读取失败");
                 JSONObject src = new JSONObject(srcText);
+
+                // P0修复2-A：Container合法字段白名单（参考 Container.java 成员变量）。
+                // 只写入白名单内的键，防止 device/meta/notes/iconFile/requiredComponents 等导出元信息污染容器配置。
+                final java.util.Set<String> CONTAINER_WHITELIST = new java.util.HashSet<>(java.util.Arrays.asList(
+                        "screenSize", "envVars", "graphicsDriver", "graphicsDriverConfig",
+                        "dxwrapper", "dxwrapperConfig", "wincomponents", "audioDriver",
+                        "drives", "wineVersion", "showFPS", "rendererNative",
+                        "rendererPresentMode", "rendererDriverId", "rendererFilterMode",
+                        "rendererSwapRB", "fullscreenStretched", "startupSelection",
+                        "cpuList", "cpuListWoW64", "syncCpuTopology", "desktopTheme",
+                        "fexcoreVersion", "fexcorePreset", "box64Preset", "midiSoundFont",
+                        "inputType", "lc_all", "primaryController", "controllerMapping",
+                        "box64Version", "emulator", "exclusiveXInput", "extraData",
+                        // 身份字段保留不覆盖（显式列出以便后续维护）
+                        "id", "name", "rootDir"
+                ));
 
                 // 读取目标容器现有配置，逐字段覆盖（保留 id/name/rootDir 等身份信息）
                 File cfgFile = targetRef.getConfigFile();
@@ -1285,14 +1302,36 @@ public class ConfigCenterFragment extends Fragment {
                 Iterator<String> it = src.keys();
                 while (it.hasNext()) {
                     String key = it.next();
-                    // 不覆盖目标容器的身份与导出元信息
-                    if ("id".equals(key) || "name".equals(key)
-                            || "gameName".equals(key) || "source".equals(key)) continue;
+                    // 白名单过滤：只允许合法 Container 字段写入容器配置
+                    if (!CONTAINER_WHITELIST.contains(key)) continue;
+                    // 不覆盖目标容器的身份信息
+                    if ("id".equals(key) || "name".equals(key)) continue;
                     dst.put(key, src.get(key));
                 }
                 FileUtils.writeString(cfgFile, dst.toString());
-                // 让内存中的容器对象重新加载
+                // 让内存中的容器对象重新加载并持久化
                 targetRef.loadData(dst);
+                targetRef.saveData();
+
+                // P0修复2-B：如果源配置包含 shortcutConfig（per-shortcut 独立配置），
+                // 遍历其键值对写入 Shortcut 的 extraData 并持久化到 .desktop 文件。
+                if (src.has("shortcutConfig") && !src.isNull("shortcutConfig")) {
+                    JSONObject scConfig = src.getJSONObject("shortcutConfig");
+                    Iterator<String> scIt = scConfig.keys();
+                    boolean scChanged = false;
+                    while (scIt.hasNext()) {
+                        String scKey = scIt.next();
+                        Object scVal = scConfig.get(scKey);
+                        // putExtra 存储 String，做类型转换
+                        String strVal;
+                        if (scVal == null) strVal = null;
+                        else if (scVal instanceof Boolean) strVal = ((Boolean) scVal) ? "1" : "0";
+                        else strVal = String.valueOf(scVal);
+                        shortcutRef.putExtra(scKey, strVal);
+                        scChanged = true;
+                    }
+                    if (scChanged) shortcutRef.saveData();
+                }
 
                 if (getActivity() != null) getActivity().runOnUiThread(() ->
                         Toast.makeText(getContext(),
