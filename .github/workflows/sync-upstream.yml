@@ -1,4 +1,4 @@
-name: 自动合并上游提交
+name: 上游更新检查与PR
 
 on:
   schedule:
@@ -34,14 +34,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: 添加上游仓库
+      - name: 添加上游仓库并获取
+        id: fetch
         run: |
           git remote add upstream https://github.com/squalle0nhart/winlator_ludashi_plus.git || true
           git fetch upstream --tags
 
-      - name: 合并上游提交
-        id: merge
-        run: |
           UPSTREAM_BRANCH="${{ github.event.inputs.upstream_branch || 'ludashi-plus/4.1' }}"
           TARGET_BRANCH="${{ github.event.inputs.target_branch || 'ludashi-plus/4.1' }}"
 
@@ -53,56 +51,98 @@ jobs:
           # 检查是否有新的上游提交
           BEHIND=$(git rev-list --count HEAD..upstream/$UPSTREAM_BRANCH 2>/dev/null || echo "0")
           echo "落后上游提交数: $BEHIND"
+          echo "behind=$BEHIND" >> $GITHUB_OUTPUT
 
           if [ "$BEHIND" = "0" ]; then
-            echo "已经是最新，无需合并"
+            echo "已经是最新，无需同步"
             echo "has_updates=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
           echo "has_updates=true" >> $GITHUB_OUTPUT
 
-          # 尝试合并
-          if git merge upstream/$UPSTREAM_BRANCH --no-edit -X theirs; then
-            echo "合并成功"
+          # 生成上游新提交列表
+          echo "=== 上游新提交 ===" > upstream_commits.txt
+          git log --oneline HEAD..upstream/$UPSTREAM_BRANCH >> upstream_commits.txt
+          cat upstream_commits.txt
+
+          # 生成修改的文件列表
+          echo "" >> upstream_commits.txt
+          echo "=== 修改的文件 ===" >> upstream_commits.txt
+          git diff --name-only HEAD..upstream/$UPSTREAM_BRANCH >> upstream_commits.txt
+          cat upstream_commits.txt
+
+          # 生成文件变更统计
+          echo "" >> upstream_commits.txt
+          echo "=== 变更统计 ===" >> upstream_commits.txt
+          git diff --stat HEAD..upstream/$UPSTREAM_BRANCH >> upstream_commits.txt
+
+          # 保存到输出
+          echo "commit_list<<EOF" >> $GITHUB_OUTPUT
+          git log --oneline HEAD..upstream/$UPSTREAM_BRANCH >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "file_list<<EOF" >> $GITHUB_OUTPUT
+          git diff --name-only HEAD..upstream/$UPSTREAM_BRANCH >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: 创建同步分支并尝试合并
+        if: steps.fetch.outputs.has_updates == 'true'
+        id: merge
+        run: |
+          UPSTREAM_BRANCH="${{ github.event.inputs.upstream_branch || 'ludashi-plus/4.1' }}"
+          TARGET_BRANCH="${{ github.event.inputs.target_branch || 'ludashi-plus/4.1' }}"
+          PR_BRANCH="sync-upstream-$(date +%Y%m%d-%H%M%S)"
+
+          echo "pr_branch=$PR_BRANCH" >> $GITHUB_OUTPUT
+
+          git checkout -b "$PR_BRANCH"
+
+          # 尝试合并，冲突时保留我们的版本（ours策略）
+          if git merge upstream/$UPSTREAM_BRANCH --no-edit -X ours; then
             echo "merge_success=true" >> $GITHUB_OUTPUT
-            git push origin "$TARGET_BRANCH"
+            echo "合并成功（无冲突或冲突已自动保留我方版本）"
           else
-            echo "合并有冲突，需要手动解决"
             echo "merge_success=false" >> $GITHUB_OUTPUT
-            git merge --abort || true
-
-            # 创建一个临时分支用于 PR
-            PR_BRANCH="sync-upstream-$(date +%Y%m%d-%H%M%S)"
-            git checkout -b "$PR_BRANCH"
-
-            # 尝试合并并保留冲突标记
-            git merge upstream/$UPSTREAM_BRANCH --no-edit -X theirs || true
-
-            # 添加所有冲突文件（保留冲突标记）
+            echo "存在冲突，保留冲突标记供人工审查"
             git add -A
             git commit -m "自动合并上游（含冲突，需手动解决）" || true
-            git push origin "$PR_BRANCH"
-
-            echo "pr_branch=$PR_BRANCH" >> $GITHUB_OUTPUT
           fi
 
-      - name: 创建 PR（如果有冲突）
-        if: steps.merge.outputs.has_updates == 'true' && steps.merge.outputs.merge_success == 'false'
+          git push origin "$PR_BRANCH"
+
+      - name: 创建PR
+        if: steps.fetch.outputs.has_updates == 'true'
         uses: repo-sync/pull-request@v2
         with:
           source_branch: ${{ steps.merge.outputs.pr_branch }}
           destination_branch: ${{ github.event.inputs.target_branch || 'ludashi-plus/4.1' }}
-          pr_title: "自动合并上游提交（需手动解决冲突）"
+          pr_title: "上游同步：${{ steps.fetch.outputs.behind }}个新提交待审查"
           pr_body: |
-            此 PR 由 GitHub Actions 自动创建。
+            ## 上游更新通知
 
-            上游仓库有新提交，但自动合并时遇到冲突，需要手动解决。
+            此 PR 由 GitHub Actions 自动创建，**不会自动合并**，请人工审查后决定是否合并。
 
-            请检查冲突文件，解决后合并此 PR。
-          pr_label: "upstream-sync,conflict"
+            ### 上游新提交（${{ steps.fetch.outputs.behind }}个）
+            ```
+            ${{ steps.fetch.outputs.commit_list }}
+            ```
 
-      - name: 合并成功通知
-        if: steps.merge.outputs.has_updates == 'true' && steps.merge.outputs.merge_success == 'true'
-        run: |
-          echo "✅ 已成功合并上游提交并推送到目标分支"
+            ### 修改的文件
+            ```
+            ${{ steps.fetch.outputs.file_list }}
+            ```
+
+            ### 合并状态
+            - 冲突策略：`-X ours`（冲突时保留我方版本）
+            - 合并结果：${{ steps.merge.outputs.merge_success == 'true' && '无冲突' || '存在冲突，已保留冲突标记' }}
+
+            ### 审查建议
+            1. 检查上游提交是否包含重要修复或新功能
+            2. 检查修改的文件是否与我们的独家修改冲突
+            3. 如有冲突，手动解决后再合并
+            4. 如不需要这些更新，直接关闭PR
+
+            > 上游仓库：squalle0nhart/winlator_ludashi_plus
+            > 上游分支：ludashi-plus/4.1
+          pr_label: "upstream-sync,needs-review"
