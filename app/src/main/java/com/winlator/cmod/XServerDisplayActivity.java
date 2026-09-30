@@ -457,7 +457,6 @@ public class XServerDisplayActivity extends AppCompatActivity {
         AppUtils.keepScreenOn(this);
 
         setContentView(R.layout.xserver_display_activity);
-        FloatingButtons.setup(this);
 
         preloaderDialog = new PreloaderDialog(this);
         preferences = PreferenceManager.getDefaultSharedPreferences(this);
@@ -1678,6 +1677,13 @@ public class XServerDisplayActivity extends AppCompatActivity {
         setupSidebarHudControls();
         setupSidebarGraphicsControls();
         setupRuntimeStatusSection();
+
+        // 悬浮三键：在所有View添加完成后设置，并置于最顶层
+        FloatingButtons.setup(this);
+        FrameLayout root = findViewById(R.id.FLXServerDisplay);
+        if (root != null && root.getChildCount() > 0) {
+            root.getChildAt(root.getChildCount() - 1).bringToFront();
+        }
     }
 
     private void setupRuntimeStatusSection() {

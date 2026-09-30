@@ -62,9 +62,9 @@ public final class RemoteDriverCatalog {
                     try {
                         String published = release.optString("published_at", "");
                         if (!published.isEmpty()) {
-                            publishedAt = java.text.DateFormat.getDateTimeInstance().parse(
-                                published.replace("T", " ").replace("Z", "")
-                            ).getTime();
+                            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US);
+                            sdf.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+                            publishedAt = sdf.parse(published).getTime();
                         }
                     } catch (Exception ignored) {}
 

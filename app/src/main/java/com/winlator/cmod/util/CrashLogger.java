@@ -9,7 +9,7 @@ import java.io.StringWriter;
 import java.util.Date;
 
 public class CrashLogger implements Thread.UncaughtExceptionHandler {
-    private static final String LOG_DIR = "/storage/emulated/0/Winlator/logs/";
+    private static String LOG_DIR = "";
     private final Context context;
     private final Thread.UncaughtExceptionHandler defaultHandler;
 
@@ -21,6 +21,9 @@ public class CrashLogger implements Thread.UncaughtExceptionHandler {
     public static void init(Context context) {
         Thread.UncaughtExceptionHandler current = Thread.getDefaultUncaughtExceptionHandler();
         if (current instanceof CrashLogger) return;
+        // 用App外部文件目录，确保Android 11+可写
+        File externalDir = context.getExternalFilesDir(null);
+        LOG_DIR = (externalDir != null ? externalDir.getAbsolutePath() : context.getFilesDir().getAbsolutePath()) + "/logs/";
         CrashLogger logger = new CrashLogger(context, current);
         Thread.setDefaultUncaughtExceptionHandler(logger);
     }
