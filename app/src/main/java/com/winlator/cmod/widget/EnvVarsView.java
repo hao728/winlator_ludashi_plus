@@ -58,7 +58,9 @@ public class EnvVarsView extends FrameLayout {
         {"WINE_DISABLE_WRITE_WATCH", "CHECKBOX", "0", "1"},
         {"STAGING_SHARED_MEMORY", "CHECKBOX", "0", "1"},
         {"WRAPPER_DMAHEAP_CACHED", "CHECKBOX", "0", "1"},
-        {"WINEVMEMMAXSIZE", "NUMBER"}
+        {"WINEVMEMMAXSIZE", "NUMBER"},
+        {"vblank_mode", "SELECT", "0", "1", "2", "3", "4"},
+        {"FD_MESA_DEBUG", "SELECT", "hiprio", "nobatch", "nosync", "nir", "perf"}
     };
     private final LinearLayout container;
     private final TextView emptyTextView;
