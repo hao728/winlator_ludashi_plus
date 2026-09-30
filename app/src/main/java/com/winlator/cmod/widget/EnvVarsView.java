@@ -47,7 +47,18 @@ public class EnvVarsView extends FrameLayout {
         {"WINE_NEW_MEDIASOURCE", "CHECKBOX", "0", "1"},
         {"GALLIUM_HUD", "SELECT_MULTIPLE", "simple", "fps", "frametime"},
         {"WINE_LARGE_ADDRESS_AWARE", "CHECKBOX", "0", "1"},
-        {"WINEDLLOVERRIDES", "TEXT"}
+        {"WINEDLLOVERRIDES", "TEXT"},
+        {"WINE_FAST_YIELD", "CHECKBOX", "0", "1"},
+        {"ZINK_CONTEXT_MODE", "SELECT", "base", "auto", "threaded"},
+        {"MESA_NO_ERROR", "CHECKBOX", "0", "1"},
+        {"WINEFSYNC", "CHECKBOX", "0", "1"},
+        {"DXVK_LOG_LEVEL", "SELECT", "none", "error", "warn", "info", "debug"},
+        {"MESA_SHADER_CACHE_MAX_SIZE", "SELECT", "512MB", "1024MB", "2048MB", "4096MB", "8192MB", "16384MB"},
+        {"DXVK_STATE_CACHE", "CHECKBOX", "0", "1"},
+        {"WINE_DISABLE_WRITE_WATCH", "CHECKBOX", "0", "1"},
+        {"STAGING_SHARED_MEMORY", "CHECKBOX", "0", "1"},
+        {"WRAPPER_DMAHEAP_CACHED", "CHECKBOX", "0", "1"},
+        {"WINEVMEMMAXSIZE", "NUMBER"}
     };
     private final LinearLayout container;
     private final TextView emptyTextView;
