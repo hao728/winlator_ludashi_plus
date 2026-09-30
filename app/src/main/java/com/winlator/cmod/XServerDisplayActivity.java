@@ -456,8 +456,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
         AppUtils.hideSystemUI(this);
         AppUtils.keepScreenOn(this);
 
-        FloatingButtons.setup(this);
         setContentView(R.layout.xserver_display_activity);
+        FloatingButtons.setup(this);
 
         preloaderDialog = new PreloaderDialog(this);
         preferences = PreferenceManager.getDefaultSharedPreferences(this);

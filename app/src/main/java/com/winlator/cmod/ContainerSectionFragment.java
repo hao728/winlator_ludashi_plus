@@ -122,7 +122,9 @@ public class ContainerSectionFragment extends Fragment {
         rendererDriverLabels.add("System");
         rendererDriverIds.add("system");
         for (String id : adrenotoolsManager.enumarateInstalledDrivers()) {
-            String label = adrenotoolsManager.getDriverName(id) + " " + adrenotoolsManager.getDriverVersion(id);
+            String drvName = adrenotoolsManager.getDriverName(id);
+            String drvVersion = adrenotoolsManager.getDriverVersion(id);
+            String label = (drvName.contains(drvVersion) || drvVersion.isEmpty()) ? drvName : drvName + " " + drvVersion;
             rendererDriverLabels.add(label.trim());
             rendererDriverIds.add(id);
             graphicsVersions.add(id);

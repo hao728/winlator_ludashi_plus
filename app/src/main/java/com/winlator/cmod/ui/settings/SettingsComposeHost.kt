@@ -682,6 +682,7 @@ internal fun DownloadableContentsSourceCard(url: String, onSave: (String) -> Uni
                 sources[0] -> onSave(ContentsManager.REMOTE_PROFILES)
                 sources[1] -> onSave(ContentsManager.REMOTE_PROFILES_NICHOLASX417)
                 sources[2] -> onSave(ContentsManager.REMOTE_PROFILES_THE412BANNER)
+                sources[3] -> onSave(ContentsManager.ARIHANY_REPO_URL)
             }
         }
         GroupDivider()
