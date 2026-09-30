@@ -349,7 +349,7 @@ public class SettingsFragment extends Fragment {
 
         final Spinner sDownloadableContentsSource = view.findViewById(R.id.SDownloadableContentsSource);
         final EditText etDownloadableContentsURL = view.findViewById(R.id.ETDownloadableContentsURL);
-        String contentsUrl = preferences.getString("downloadable_contents_url", ContentsManager.REMOTE_PROFILES);
+        String contentsUrl = preferences.getString("downloadable_contents_url", ContentsManager.REMOTE_PROFILES_THE412BANNER);
         int contentsSource = ContentsManager.getRemoteProfilesSource(contentsUrl);
         sDownloadableContentsSource.setSelection(contentsSource);
         etDownloadableContentsURL.setText(contentsUrl);
@@ -507,7 +507,7 @@ public class SettingsFragment extends Fragment {
                 preferences.getBoolean("enable_box64_logs", false),
                 preferences.getBoolean("enable_custom_api_key", false),
                 preferences.getString("custom_api_key", ""),
-                preferences.getString("downloadable_contents_url", ContentsManager.REMOTE_PROFILES),
+                preferences.getString("downloadable_contents_url", ContentsManager.REMOTE_PROFILES_THE412BANNER),
                 wineDebugOptions
         );
     }
@@ -632,7 +632,7 @@ public class SettingsFragment extends Fragment {
             @Override
             public void onContentsUrlChanged(@NonNull String value) {
                 String normalized = value.trim();
-                if (normalized.isEmpty()) normalized = ContentsManager.REMOTE_PROFILES;
+                if (normalized.isEmpty()) normalized = ContentsManager.REMOTE_PROFILES_THE412BANNER;
                 preferences.edit().putString("downloadable_contents_url", normalized).apply();
                 refreshCompose();
             }

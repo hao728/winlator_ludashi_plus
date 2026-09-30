@@ -129,12 +129,12 @@ public class OnboardingActivity extends AppCompatActivity {
                 WineRuntimeGuard.isBundledMainInstalled(this),
                 WineRuntimeGuard.isInUse(this, WineInfo.MAIN_WINE_VERSION.identifier()),
                 componentManagerMode,
-                preferences.getString("downloadable_contents_url", ContentsManager.REMOTE_PROFILES),
+                preferences.getString("downloadable_contents_url", ContentsManager.REMOTE_PROFILES_THE412BANNER),
                 new OnboardingCallbacks() {
                     @Override
                     public void onContentsSourceSelected(@NonNull String url) {
                         String normalized = url.trim();
-                        if (normalized.isEmpty()) normalized = ContentsManager.REMOTE_PROFILES;
+                        if (normalized.isEmpty()) normalized = ContentsManager.REMOTE_PROFILES_THE412BANNER;
                         preferences.edit().putString("downloadable_contents_url", normalized).apply();
                         loadCatalog();
                     }
@@ -303,7 +303,7 @@ public class OnboardingActivity extends AppCompatActivity {
 
     private void loadCatalog() {
         int request = ++catalogRequest;
-        String url = preferences.getString("downloadable_contents_url", ContentsManager.REMOTE_PROFILES);
+        String url = preferences.getString("downloadable_contents_url", ContentsManager.REMOTE_PROFILES_THE412BANNER);
         composeController.setCatalogLoading(true);
         io.execute(() -> {
             if (request != catalogRequest) return;
