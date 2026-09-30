@@ -391,6 +391,9 @@ public class GameRestorePackageManager {
                         if (topItems != null) {
                             for (File item : topItems) {
                                 File destItem = new File(destWineDir, item.getName());
+                                // P2修复8：复制前先回调当前文件名，避免大目录复制期间进度条看似卡住
+                                int preP = 32 + (int) ((doneTop / (float) Math.max(1, totalTop)) * 14);
+                                callback.onProgress(Math.min(46, preP), "正在复制: " + item.getName());
                                 try {
                                     copyDirectoryPreservingSymlinks(item, destItem);
                                 } catch (Exception e) {
@@ -521,6 +524,9 @@ public class GameRestorePackageManager {
                         for (File gameDir : gameDirs) {
                             if (gameDir.isDirectory()) {
                                 File destGameDir = new File(destGamesDir, gameDir.getName());
+                                // P2修复8：复制前先回调当前文件名，避免大游戏目录复制期间进度条看似卡住
+                                int preDirP = 62 + (int) ((dirIdx / (float) Math.max(1, dirTotal)) * 18);
+                                callback.onProgress(Math.min(80, preDirP), "正在复制: " + gameDir.getName());
                                 copyDirectorySimple(gameDir, destGameDir);
                                 if (gameDirName != null && !gameDirName.isEmpty() && gameDir.getName().equals(gameDirName)) {
                                     if (executableName != null && !executableName.isEmpty()) {
