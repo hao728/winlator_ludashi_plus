@@ -253,7 +253,7 @@ private fun AddEnvironmentVariableDialog(
     onDismiss: () -> Unit,
     onAdd: (String, String) -> Unit
 ) {
-    val available = knownEnvironmentVariables.map { it.name }
+    val available = knownEnvironmentVariables.map { it.name }.filter { it !in existing }
     var name by remember { mutableStateOf(available.firstOrNull().orEmpty()) }
     var customName by remember { mutableStateOf("") }
     val options = available + "Custom…"

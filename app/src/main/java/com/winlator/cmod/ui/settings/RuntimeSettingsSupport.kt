@@ -79,7 +79,8 @@ internal data class DriverOption(
     val installed: Boolean,
     val remoteUrl: String? = null,
     val repository: String = "",
-    val publishedAt: Long = 0
+    val publishedAt: Long = 0,
+    val tag: String = ""
 )
 
 internal fun graphicsDriverLabel(entries: List<String>, id: String): String {
@@ -256,7 +257,7 @@ internal suspend fun loadSettingsCatalog(
         }
         if (!alreadyInstalled) {
             driverOptions["remote:${remote.name}:${remote.url}"] =
-                DriverOption(remote.name, remote.name, false, remote.url, remote.repository, remote.publishedAt)
+                DriverOption(remote.name, remote.name, false, remote.url, remote.repository, remote.publishedAt, remote.tagName)
         }
     }
     if (selectedDriver.isNotBlank() && driverOptions.values.none { it.id.equals(selectedDriver, ignoreCase = true) }) {
@@ -755,7 +756,10 @@ internal fun SettingDriverChoice(
                                 Column {
                                     Text(option.label, color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (option.installed) 1f else .52f))
                                     Row {
-                                        if (!option.installed) Text(if (busy) "Downloading…" else "Download", style = MaterialTheme.typography.labelSmall)
+                                        if (!option.installed) {
+                                            val tagText = if (busy) "Downloading…" else if (option.tag.isNotEmpty()) option.tag else "Download"
+                                            Text(tagText, style = MaterialTheme.typography.labelSmall)
+                                        }
                                         if (timeStr.isNotEmpty()) Text(timeStr, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f), modifier = Modifier.padding(start = 8.dp))
                                     }
                                 }
