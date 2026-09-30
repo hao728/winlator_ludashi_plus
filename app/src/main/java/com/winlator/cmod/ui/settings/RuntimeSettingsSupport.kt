@@ -86,6 +86,28 @@ internal data class DriverOption(
 internal fun graphicsDriverLabel(entries: List<String>, id: String): String {
     return entries.firstOrNull { StringUtils.parseIdentifier(it).equals(id, true) } ?: id
 }
+
+/**
+ * 缩短过长的驱动asset文件名，保留版本号关键信息。
+ * 例如 "Turnip-v26.3.0-20260930-r5-710-720" → "Turnip v26.3.0 r5-710-720"
+ */
+internal fun shortenDriverName(name: String): String {
+    if (name.length <= 28) return name
+    // 提取版本号模式：v数字.数字.数字 或 数字.数字.数字
+    val versionMatch = Regex("""v?\d+\.\d+\.\d+(-\d+)?""").find(name)
+    val version = versionMatch?.value ?: ""
+    // 提取r数字 或 末尾标识
+    val suffixMatch = Regex("""r\d+(-\d+)*(-\d+)?$""").find(name)
+    val suffix = suffixMatch?.value ?: ""
+    // 提取前缀（Turnip/Mesa等）
+    val prefix = name.substringBefore("-").take(12)
+    return when {
+        version.isNotEmpty() && suffix.isNotEmpty() -> "$prefix $version $suffix"
+        version.isNotEmpty() -> "$prefix $version"
+        else -> name.take(28) + "…"
+    }
+}
+
 internal data class WineRuntimeOption(
     val id: String,
     val label: String,
@@ -244,10 +266,14 @@ internal suspend fun loadSettingsCatalog(
         }
     }
     runCatching { adreno.enumerateRendererDrivers() }.getOrNull().orEmpty().forEach { id ->
-        val label = listOf(adreno.getDriverName(id), adreno.getDriverVersion(id))
-            .filter { it.isNotBlank() }
-            .joinToString(" ")
-            .ifBlank { id }
+        val driverName = adreno.getDriverName(id)
+        val driverVersion = adreno.getDriverVersion(id)
+        // 优先显示 名称+版本；版本为空时用目录名（含版本信息）
+        val label = when {
+            driverName.isNotBlank() && driverVersion.isNotBlank() -> "$driverName $driverVersion"
+            driverName.isNotBlank() -> driverName
+            else -> id
+        }
         rendererDrivers[id] = label
         driverOptions[id.lowercase()] = DriverOption(id, label, true)
     }
@@ -256,8 +282,10 @@ internal suspend fun loadSettingsCatalog(
             it.id.equals(remote.name, ignoreCase = true) || it.label.equals(remote.name, ignoreCase = true)
         }
         if (!alreadyInstalled) {
+            // 缩短过长的asset文件名：保留版本号关键部分
+            val shortLabel = shortenDriverName(remote.name)
             driverOptions["remote:${remote.name}:${remote.url}"] =
-                DriverOption(remote.name, remote.name, false, remote.url, remote.repository, remote.publishedAt, remote.tagName)
+                DriverOption(remote.name, shortLabel, false, remote.url, remote.repository, remote.publishedAt, remote.tagName)
         }
     }
     if (selectedDriver.isNotBlank() && driverOptions.values.none { it.id.equals(selectedDriver, ignoreCase = true) }) {

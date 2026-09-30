@@ -25,6 +25,11 @@ import okhttp3.Response;
 public final class RemoteDriverCatalog {
     private RemoteDriverCatalog() {}
 
+    // 内存缓存：避免重复网络请求，缓存5分钟
+    private static List<Entry> cachedResult = null;
+    private static long cacheTime = 0;
+    private static final long CACHE_DURATION = 5 * 60 * 1000L;
+
     public static final class Entry {
         public final String repository;
         public final String name;
@@ -42,6 +47,12 @@ public final class RemoteDriverCatalog {
     }
 
     public static List<Entry> load(Context context) {
+        // 检查缓存
+        long now = System.currentTimeMillis();
+        if (cachedResult != null && (now - cacheTime) < CACHE_DURATION) {
+            return new ArrayList<>(cachedResult);
+        }
+
         ArrayList<Entry> result = new ArrayList<>();
         OkHttpClient http = new OkHttpClient();
         for (DriverRepo repo : RepositoryManagerDialog.loadDriverRepos(context, 0)) {
@@ -93,6 +104,14 @@ public final class RemoteDriverCatalog {
                 return Long.compare(b.publishedAt, a.publishedAt);
             }
         });
+        // 只有成功获取到数据才更新缓存；失败时保留旧缓存
+        if (!result.isEmpty()) {
+            cachedResult = new ArrayList<>(result);
+            cacheTime = now;
+        } else if (cachedResult != null) {
+            // 网络失败但有缓存，返回缓存
+            return new ArrayList<>(cachedResult);
+        }
         return result;
     }
 

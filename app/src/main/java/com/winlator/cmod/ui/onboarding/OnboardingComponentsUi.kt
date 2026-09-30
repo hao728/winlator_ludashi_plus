@@ -607,6 +607,7 @@ private fun AdrenoToolsDriverList(
     val context = androidx.compose.ui.platform.LocalContext.current
     var drivers by remember { mutableStateOf<List<RemoteDriverCatalog.Entry>>(emptyList()) }
     var installedDrivers by remember { mutableStateOf<List<String>>(emptyList()) }
+    var installedInfo by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var loading by remember { mutableStateOf(true) }
     var selectedRepo by remember { mutableStateOf("全部") }
     var installingUrl by remember { mutableStateOf<String?>(null) }
@@ -617,8 +618,20 @@ private fun AdrenoToolsDriverList(
             try {
                 val manager = AdrenotoolsManager(context)
                 val installed = manager.enumarateInstalledDrivers()
+                val info = mutableMapOf<String, String>()
+                for (id in installed) {
+                    val name = manager.getDriverName(id)
+                    val version = manager.getDriverVersion(id)
+                    val display = when {
+                        name.isNotEmpty() && version.isNotEmpty() -> "$name $version"
+                        name.isNotEmpty() -> name
+                        else -> id
+                    }
+                    info[id] = display
+                }
                 (context as? android.app.Activity)?.runOnUiThread {
                     installedDrivers = installed
+                    installedInfo = info
                 }
             } catch (e: Exception) {}
         }
