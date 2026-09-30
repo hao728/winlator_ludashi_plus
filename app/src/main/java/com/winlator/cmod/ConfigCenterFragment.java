@@ -375,7 +375,6 @@ public class ConfigCenterFragment extends Fragment {
             info.graphicsWrapper = json.optString("graphicsWrapper", "wrapper");
             info.graphicsDriverConfig = json.optString("graphicsDriverConfig", "");
             info.dxwrapperConfig = json.optString("dxwrapperConfig", "");
-            info.containsZDrive = json.optBoolean("containsZDrive", false);
             // P0修复1：shortcutConfig 实际打包在 shortcut/shortcut.json 中，
             // 不在 metadata.json 里。需单独读取 shortcut/shortcut.json 并检查其是否含 shortcutConfig 键。
             info.hasShortcutConfig = false;

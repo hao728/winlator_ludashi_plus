@@ -91,8 +91,6 @@ public class GameRestorePackageManager {
         // BUG1：渲染器与Vulkan Wrapper
         public boolean rendererNative;
         public String graphicsWrapper;
-        // BUG5：是否包含Z盘Wine运行时
-        public boolean containsZDrive;
         // BUG4：Wine运行环境完整性警告
         public String wineRuntimeWarning;
         // v4：快捷方式信息（仅文件名和目录名，不含本地路径）
@@ -187,14 +185,12 @@ public class GameRestorePackageManager {
 
             // 20-40%：导出Wine运行环境（每个顶层目录回调子进度）
             boolean wineRuntimePacked = false;
-            boolean containsZDrive = false;
             if (includeWineRuntime) {
                 callback.onProgress(22, "导出Wine运行环境（较大，请耐心等待）...");
                 File wineDir = new File(container.getRootDir(), ".wine");
                 if (wineDir.exists()) {
                     copyWineRuntime(wineDir, wineruntimeDir, callback, 20, 38);
-                    // BUG5：复制z:符号链接指向的Wine运行时（容器外部目录）
-                    containsZDrive = copyZDriveRuntime(wineDir, wineruntimeDir, callback);
+                    // P2修复9：移除 copyZDriveRuntime 调用——导入端还原分支被前置校验架空，为死代码。
                     wineRuntimePacked = true;
                     callback.onProgress(40, "Wine运行环境已打包");
                 }
@@ -232,7 +228,7 @@ public class GameRestorePackageManager {
             // 创建元数据（快速，不占进度区间）
             callback.onProgress(76, "创建元数据...");
             JSONObject metadata = buildMetadata(context, shortcut, container, gameFilesPacked,
-                    includeRegistry, wineRuntimePacked, containsZDrive, author, description);
+                    includeRegistry, wineRuntimePacked, author, description);
             FileUtils.writeString(new File(tempDir, METADATA_FILE), metadata.toString(2));
 
             // 75-95%：压缩ZIP（每个文件回调子进度）
@@ -415,13 +411,7 @@ public class GameRestorePackageManager {
                     fixWineEnvironment(destWineDir);
                     // BUG5：重建z:符号链接指向新容器的正确位置（旧链接指向旧设备绝对路径，已断裂）
                     rebuildZDriveSymlink(destWineDir, newContainerDir);
-                    // BUG5：如果数据包包含zdrive运行时且Wine未安装，还原zdrive文件
-                    File zdrivePacked = new File(srcWineRuntime, "zdrive");
-                    if (zdrivePacked.exists() && zdrivePacked.isDirectory()
-                            && !isWineVersionInstalled(context, containerWineVersion)) {
-                        File zTargetDir = new File(newContainerDir.getParentFile().getParentFile(), ".");
-                        copyDirectorySimple(zdrivePacked, zTargetDir);
-                    }
+                    // P2修复9：移除zdrive还原死代码——L308前置校验已确保Wine必须已安装，此分支永不执行。
 
                     // P0修复2：删除随wineruntime复制过来的源容器原始.desktop文件。
                     // 源容器Desktop下的旧.desktop会被原样复制到新容器，随后createShortcutFromJson
@@ -1211,12 +1201,11 @@ public class GameRestorePackageManager {
 
     /**
      * v3：buildMetadata扩展完整容器环境字段
-     * BUG1：新增rendererNative/graphicsWrapper字段
-     * BUG5：新增containsZDrive字段
+     * P2修复9：移除containsZDrive字段（导入端为死代码，导出白白增加数据包体积）
      */
     private static JSONObject buildMetadata(Context context, Shortcut shortcut, Container container,
                                              boolean gameFilesPacked, boolean includeRegistry,
-                                             boolean containsWineRuntime, boolean containsZDrive,
+                                             boolean containsWineRuntime,
                                              String author, String description) throws Exception {
         JSONObject metadata = new JSONObject();
         metadata.put("version", 3);
@@ -1230,7 +1219,6 @@ public class GameRestorePackageManager {
         metadata.put("containsGameFiles", gameFilesPacked);
         metadata.put("containsRegistry", includeRegistry);
         metadata.put("containsWineRuntime", containsWineRuntime);
-        metadata.put("containsZDrive", containsZDrive);
 
         // v3：完整容器环境字段
         metadata.put("graphicsDriver", container.getGraphicsDriver() != null ? container.getGraphicsDriver() : "");
@@ -1661,7 +1649,10 @@ public class GameRestorePackageManager {
      * z:指向容器根目录的上两级（包含wine/wine64可执行文件和库）。
      * 将该目录中的Wine运行时文件复制到wineruntime/zdrive/，排除大的临时文件和缓存。
      * @return true if zdrive was packed
+     * @deprecated P2修复9：导入端还原分支被"Wine必须已安装"前置校验架空，为死代码。
+     *             已从 exportPackage 中移除调用，保留方法定义以减少影响面。
      */
+    @Deprecated
     private static boolean copyZDriveRuntime(File wineDir, File wineruntimeDir, ExportCallback callback) {
         try {
             File zLink = new File(wineDir, "dosdevices/z:");
