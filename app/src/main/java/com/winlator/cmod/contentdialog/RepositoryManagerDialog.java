@@ -129,7 +129,6 @@ public class RepositoryManagerDialog {
             result.add(getStevenMxzRepo());
             result.add(new DriverRepo("WinNative Drivers", "https://api.github.com/repos/WinNative-Emu/Drivers/releases"));
             result.add(new DriverRepo("Whitebelyash Drivers", "https://api.github.com/repos/whitebelyash/AdrenoToolsDrivers/releases"));
-            result.add(new DriverRepo("Weab-Chan Turnip Drivers", "https://api.github.com/repos/Weab-chan/freedreno_turnip-CI/releases"));
         } else {
             try {
                 JSONArray array = new JSONArray(jsonStr);
