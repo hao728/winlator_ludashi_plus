@@ -376,8 +376,20 @@ public class ConfigCenterFragment extends Fragment {
             info.graphicsDriverConfig = json.optString("graphicsDriverConfig", "");
             info.dxwrapperConfig = json.optString("dxwrapperConfig", "");
             info.containsZDrive = json.optBoolean("containsZDrive", false);
-            // BUG7：检测shortcutConfig是否存在
-            info.hasShortcutConfig = json.has("shortcutConfig");
+            // P0修复1：shortcutConfig 实际打包在 shortcut/shortcut.json 中，
+            // 不在 metadata.json 里。需单独读取 shortcut/shortcut.json 并检查其是否含 shortcutConfig 键。
+            info.hasShortcutConfig = false;
+            ZipEntry scEntry = zf.getEntry("shortcut/shortcut.json");
+            if (scEntry != null) {
+                try (InputStream scIs = zf.getInputStream(scEntry)) {
+                    ByteArrayOutputStream scBos = new ByteArrayOutputStream();
+                    byte[] scBuf = new byte[8192];
+                    int scN;
+                    while ((scN = scIs.read(scBuf)) > 0) scBos.write(scBuf, 0, scN);
+                    JSONObject scJson = new JSONObject(new String(scBos.toByteArray(), "UTF-8"));
+                    info.hasShortcutConfig = scJson.has("shortcutConfig");
+                } catch (Exception ignored) {}
+            }
             e.packageInfo = info;
 
             // BUG2：同目录同名 .png 图标（WolfsDungeon.grp.zip -> WolfsDungeon.png）
