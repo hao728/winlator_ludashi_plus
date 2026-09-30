@@ -77,7 +77,9 @@ internal data class DriverOption(
     val id: String,
     val label: String,
     val installed: Boolean,
-    val remoteUrl: String? = null
+    val remoteUrl: String? = null,
+    val repository: String = "",
+    val publishedAt: Long = 0
 )
 
 internal fun graphicsDriverLabel(entries: List<String>, id: String): String {
@@ -254,7 +256,7 @@ internal suspend fun loadSettingsCatalog(
         }
         if (!alreadyInstalled) {
             driverOptions["remote:${remote.name}:${remote.url}"] =
-                DriverOption(remote.name, remote.name, false, remote.url)
+                DriverOption(remote.name, remote.name, false, remote.url, remote.repository, remote.publishedAt)
         }
     }
     if (selectedDriver.isNotBlank() && driverOptions.values.none { it.id.equals(selectedDriver, ignoreCase = true) }) {
@@ -664,54 +666,115 @@ internal fun SettingDriverChoice(
     onInstall: (DriverOption) -> Unit,
     onSelected: (String) -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    // 按作者分组
+    val installedOptions = options.filter { it.installed }
+    val remoteOptions = options.filter { !it.installed }
+    val repositories = remoteOptions.map { it.repository }.distinct().filter { it.isNotEmpty() }
+    
+    // 分类列表：已安装 + 各作者
+    val categories = listOf("已安装") + repositories
     val selectedOption = options.firstOrNull { it.id.equals(selected, ignoreCase = true) }
-    Box(Modifier.fillMaxWidth()) {
-        Surface(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth(), color = Color.Transparent) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(settingFieldLabel(label), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(
-                        selectedOption?.label ?: selected,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                Icon(Icons.Outlined.KeyboardArrowDown, null)
-            }
+    
+    // 默认选中包含当前驱动的分类
+    val initialCategory = when {
+        selectedOption?.installed == true -> "已安装"
+        selectedOption?.repository?.isNotEmpty() == true -> selectedOption.repository
+        else -> categories.firstOrNull() ?: "已安装"
+    }
+    var selectedCategory by remember(selected) { mutableStateOf(initialCategory) }
+    var categoryExpanded by remember { mutableStateOf(false) }
+    var versionExpanded by remember { mutableStateOf(false) }
+    
+    // 当前分类下的版本列表
+    val currentOptions = when (selectedCategory) {
+        "已安装" -> installedOptions
+        else -> remoteOptions.filter { it.repository == selectedCategory }
+    }.sortedByDescending { it.publishedAt }
+    
+    // 格式化发布时间
+    fun formatTime(timestamp: Long): String {
+        if (timestamp <= 0) return ""
+        val diff = System.currentTimeMillis() - timestamp
+        val days = diff / (1000 * 60 * 60 * 24)
+        return when {
+            days < 1 -> "今天"
+            days < 2 -> "昨天"
+            days < 30 -> "${days}天前"
+            else -> java.text.SimpleDateFormat("MM-dd", java.util.Locale.getDefault()).format(java.util.Date(timestamp))
         }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.widthIn(min = 260.dp, max = 460.dp).heightIn(max = 500.dp)
-        ) {
-            options.forEach { option ->
-                val busy = "driver:${option.remoteUrl ?: option.id}" in installing
-                DropdownMenuItem(
-                    text = {
-                        Column {
-                            Text(option.label, color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (option.installed) 1f else .52f))
-                            if (!option.installed) Text(if (busy) "Downloading…" else "Download", style = MaterialTheme.typography.labelSmall)
-                        }
-                    },
-                    trailingIcon = {
-                        if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        else if (option.installed && option.id.equals(selected, ignoreCase = true)) Icon(Icons.Outlined.Check, null)
-                    },
-                    onClick = {
-                        if (option.installed) {
-                            expanded = false
-                            onSelected(option.id)
-                        } else if (!busy) {
-                            onInstall(option)
-                        }
+    }
+    
+    Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp)) {
+        Text(settingFieldLabel(label), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        
+        // 第一行：作者分类 + 当前选中版本
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // 作者分类下拉
+            Box(Modifier.weight(1f)) {
+                Surface(onClick = { categoryExpanded = true }, color = Color.Transparent) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
+                        Text(selectedCategory, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        Icon(Icons.Outlined.KeyboardArrowDown, null, modifier = Modifier.size(20.dp))
                     }
-                )
+                }
+                DropdownMenu(expanded = categoryExpanded, onDismissRequest = { categoryExpanded = false }, modifier = Modifier.widthIn(min = 180.dp, max = 300.dp)) {
+                    categories.forEach { cat ->
+                        DropdownMenuItem(
+                            text = { Text(cat, fontWeight = if (cat == selectedCategory) FontWeight.Bold else FontWeight.Normal) },
+                            trailingIcon = { if (cat == selectedCategory) Icon(Icons.Outlined.Check, null) },
+                            onClick = { selectedCategory = cat; categoryExpanded = false }
+                        )
+                    }
+                }
+            }
+            
+            // 版本下拉
+            Box(Modifier.weight(1.5f)) {
+                Surface(onClick = { versionExpanded = true }, color = Color.Transparent) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
+                        Text(
+                            selectedOption?.label ?: selected,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(Icons.Outlined.KeyboardArrowDown, null, modifier = Modifier.size(20.dp))
+                    }
+                }
+                DropdownMenu(expanded = versionExpanded, onDismissRequest = { versionExpanded = false }, modifier = Modifier.widthIn(min = 260.dp, max = 460.dp).heightIn(max = 500.dp)) {
+                    if (currentOptions.isEmpty()) {
+                        DropdownMenuItem(text = { Text("暂无可用版本", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)) }, onClick = { versionExpanded = false })
+                    }
+                    currentOptions.forEach { option ->
+                        val busy = "driver:${option.remoteUrl ?: option.id}" in installing
+                        val timeStr = if (option.publishedAt > 0) formatTime(option.publishedAt) else ""
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(option.label, color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (option.installed) 1f else .52f))
+                                    Row {
+                                        if (!option.installed) Text(if (busy) "Downloading…" else "Download", style = MaterialTheme.typography.labelSmall)
+                                        if (timeStr.isNotEmpty()) Text(timeStr, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f), modifier = Modifier.padding(start = 8.dp))
+                                    }
+                                }
+                            },
+                            trailingIcon = {
+                                if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                                else if (option.installed && option.id.equals(selected, ignoreCase = true)) Icon(Icons.Outlined.Check, null)
+                            },
+                            onClick = {
+                                if (option.installed) {
+                                    versionExpanded = false
+                                    onSelected(option.id)
+                                } else if (!busy) {
+                                    onInstall(option)
+                                }
+                            }
+                        )
+                    }
+                }
             }
         }
     }
