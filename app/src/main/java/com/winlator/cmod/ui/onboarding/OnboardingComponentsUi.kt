@@ -222,15 +222,19 @@ internal fun OnboardingComponentsScreen(
                         )
                     }
                 }
-                ComponentList(
-                    visible,
-                    catalogLoading,
-                    installing,
-                    installingLabel,
-                    installingProgress,
-                    cb,
-                    Modifier.weight(1.2f).fillMaxHeight()
-                )
+                if (category == "AdrenoTools") {
+                    AdrenoToolsDriverList(cb, Modifier.weight(1.2f).fillMaxHeight().padding(top = 10.dp))
+                } else {
+                    ComponentList(
+                        visible,
+                        catalogLoading,
+                        installing,
+                        installingLabel,
+                        installingProgress,
+                        cb,
+                        Modifier.weight(1.2f).fillMaxHeight()
+                    )
+                }
             }
         } else {
             LazyColumn(
@@ -276,6 +280,9 @@ internal fun OnboardingComponentsScreen(
                 if (catalogLoading) item { LoadingCard() }
                 else if (visible.isEmpty()) item {
                     Text("No components available in this category.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                else if (category == "AdrenoTools") item {
+                    AdrenoToolsDriverList(cb, Modifier.fillMaxWidth())
                 }
                 else items(visible, key = { it.id }) {
                     ComponentCard(
@@ -579,6 +586,146 @@ private fun ComponentsFooter(
                 modifier = Modifier.weight(1f).height(48.dp),
                 shape = RoundedCornerShape(12.dp)
             ) { Text(nextLabel) }
+        }
+    }
+}
+
+
+@Composable
+private fun AdrenoToolsDriverList(
+    cb: OnboardingCallbacks,
+    modifier: Modifier = Modifier
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var drivers by remember { mutableStateOf<List<RemoteDriverCatalog.Entry>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var selectedRepo by remember { mutableStateOf("全部") }
+    var installingUrl by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        loading = true
+        val loaded = RemoteDriverCatalog.load(context)
+        drivers = loaded
+        loading = false
+    }
+
+    val repos = remember(drivers) {
+        listOf("全部") + drivers.map { it.repository }.distinct().filter { it.isNotEmpty() }
+    }
+
+    val filtered = remember(drivers, selectedRepo) {
+        if (selectedRepo == "全部") drivers else drivers.filter { it.repository == selectedRepo }
+    }
+
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // 作者分类Tab
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            repos.forEach { repo ->
+                val selected = repo == selectedRepo
+                Surface(
+                    onClick = { selectedRepo = repo },
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    Box(Modifier.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            repo,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        if (loading) {
+            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                androidx.compose.material3.CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp)
+            }
+        } else if (filtered.isEmpty()) {
+            Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface) {
+                Text("暂无可用驱动", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            filtered.forEach { driver ->
+                val isInstalling = installingUrl == driver.url
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surface
+                ) {
+                    Row(
+                        Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(driver.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            Spacer(Modifier.height(2.dp))
+                            Row {
+                                if (driver.tagName.isNotEmpty()) {
+                                    Text(driver.tagName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                                if (driver.publishedAt > 0) {
+                                    val diff = System.currentTimeMillis() - driver.publishedAt
+                                    val days = diff / (1000 * 60 * 60 * 24)
+                                    val timeStr = when {
+                                        days < 1 -> "今天"
+                                        days < 2 -> "昨天"
+                                        days < 30 -> "${days}天前"
+                                        else -> java.text.SimpleDateFormat("MM-dd", java.util.Locale.getDefault()).format(java.util.Date(driver.publishedAt))
+                                    }
+                                    Text(timeStr, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                Text(driver.repository, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                            }
+                        }
+                        if (isInstalling) {
+                            androidx.compose.material3.CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                        } else {
+                            TextButton(onClick = {
+                                installingUrl = driver.url
+                                // 下载并安装驱动
+                                kotlin.concurrent.thread {
+                                    try {
+                                        val tmpFile = java.io.File(context.cacheDir, "driver_${System.currentTimeMillis()}.zip")
+                                        val success = Downloader.downloadFile(driver.url, tmpFile)
+                                        if (success) {
+                                            val manager = AdrenotoolsManager(context)
+                                            val installed = manager.installDriver(android.net.Uri.fromFile(tmpFile))
+                                            tmpFile.delete()
+                                            (context as? android.app.Activity)?.runOnUiThread {
+                                                installingUrl = null
+                                                if (installed.isNotEmpty()) {
+                                                    android.widget.Toast.makeText(context, "已安装: $installed", android.widget.Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    android.widget.Toast.makeText(context, "安装失败", android.widget.Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        } else {
+                                            (context as? android.app.Activity)?.runOnUiThread {
+                                                installingUrl = null
+                                                android.widget.Toast.makeText(context, "下载失败", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        (context as? android.app.Activity)?.runOnUiThread {
+                                            installingUrl = null
+                                        }
+                                    }
+                                }
+                            }) {
+                                Text("下载")
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
