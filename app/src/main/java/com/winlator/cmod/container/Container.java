@@ -29,7 +29,7 @@ public class Container {
         THUMBSTICK_UP, THUMBSTICK_DOWN, THUMBSTICK_LEFT, THUMBSTICK_RIGHT
     }
     public static final String DEFAULT_DISPLAY_DRIVER = "egl";
-    public static final String DEFAULT_ENV_VARS = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_CONTEXT_MODE=threaded MESA_NO_ERROR=1 MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=1024MB mesa_glthread=true WINEESYNC=1 WINEFSYNC=1 WINE_LARGE_ADDRESS_AWARE=1 TU_DEBUG=noconform DXVK_HUD=devinfo,version,gpuload,fps DXVK_LOG_LEVEL=none";
+    public static final String DEFAULT_ENV_VARS = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact ZINK_CONTEXT_MODE=threaded MESA_NO_ERROR=1 MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=1024MB mesa_glthread=true WINEESYNC=1 WINEFSYNC=1 WINE_FAST_YIELD=1 WINE_LARGE_ADDRESS_AWARE=1 TU_DEBUG=noconform DXVK_HUD=devinfo,version,gpuload,fps DXVK_LOG_LEVEL=none";
     public static final String DEFAULT_SCREEN_SIZE = "1280x720";
     /** Panel-shaped default for new containers; existing container data is never changed. */
     public static String defaultScreenSizeFor(android.content.Context context) {
