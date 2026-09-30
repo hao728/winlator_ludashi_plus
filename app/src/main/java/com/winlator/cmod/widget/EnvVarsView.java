@@ -47,7 +47,7 @@ public class EnvVarsView extends FrameLayout {
         {"WINE_NEW_MEDIASOURCE", "CHECKBOX", "0", "1"},
         {"GALLIUM_HUD", "SELECT_MULTIPLE", "simple", "fps", "frametime"},
         {"WINE_LARGE_ADDRESS_AWARE", "CHECKBOX", "0", "1"},
-        {"WINEDLLOVERRIDES", "SELECT", "d3d9=n,b", "d3d11=n,b", "dxgi=n,b", "d3d9=n,b;d3d11=n,b;dxgi=n,b", "xinput1_3=n,b", "mscoree="},
+        {"WINEDLLOVERRIDES", "SELECT_MULTIPLE", "d3d9=n,b", "d3d11=n,b", "dxgi=n,b", "xinput1_3=n,b", "dinput8=n,b", "dsound=n,b", "mscoree=", "mshtml="},
         {"WINE_FAST_YIELD", "CHECKBOX", "0", "1"},
         {"ZINK_CONTEXT_MODE", "SELECT", "base", "auto", "threaded"},
         {"MESA_NO_ERROR", "CHECKBOX", "0", "1"},
@@ -174,6 +174,7 @@ public class EnvVarsView extends FrameLayout {
             GetValueCallback getValueCallback = (GetValueCallback) child.getTag();
             String name = ((TextView) child.findViewById(R.id.TextView)).getText().toString();
             String value = getValueCallback.call().trim().replace(" ", "");
+            if ("WINEDLLOVERRIDES".equals(name)) value = value.replace(",", ";");
             if (!value.isEmpty()) envVars.put(name, value);
         }
         return envVars.toString();
