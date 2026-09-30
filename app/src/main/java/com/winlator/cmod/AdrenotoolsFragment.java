@@ -212,12 +212,13 @@ public class AdrenotoolsFragment extends Fragment {
             }
         }
         if (targetRepo == null) return;
+        final DriverRepo repoToLoad = targetRepo;
 
         releaseAdapter.setData(new ArrayList<>());
         Toast.makeText(getContext(), "加载 " + category + " 驱动...", Toast.LENGTH_SHORT).show();
 
         Executors.newSingleThreadExecutor().execute(() -> {
-            List<ReleaseItem> releases = fetchReleases(targetRepo);
+            List<ReleaseItem> releases = fetchReleases(repoToLoad);
             if (getActivity() != null) {
                 getActivity().runOnUiThread(() -> releaseAdapter.setData(releases));
             }
