@@ -36,6 +36,7 @@ public class EnvVarsView extends FrameLayout {
         {"TU_DEBUG", "SELECT_MULTIPLE", "forcecb", "nocb", "deck_emu", "startup", "nir", "nobin", "sysmem", "gmem", "forcebin", "layout", "noubwc", "nomultipos", "nolrz", "nolrzfc", "perf", "perfc", "flushall", "syncdraw", "push_consts_per_stage", "rast_order", "unaligned_store", "log_skip_gmem_ops", "dynamic", "bos", "3d_load", "fdm", "noconform", "rd"},
         {"DXVK_HUD", "SELECT_MULTIPLE", "scale=0.5", "scale=0.7", "opacity=0.5", "opacity=0.7", "devinfo", "fps", "frametimes", "submissions", "drawcalls", "pipelines", "descriptors", "memory", "gpuload", "version", "api", "cs", "compiler", "samplers"},
         {"MESA_EXTENSION_MAX_YEAR", "SELECT", "2001", "2003", "2008", "2015", "2026"},
+        {"VKD3D_CONFIG", "SELECT_MULTIPLE", "vk_debug", "skip_application_workarounds", "nodxr", "dxr", "dxr12", "force_static_cbv", "single_queue", "no_upload_hvv", "force_host_cached", "no_invariant_position", "pipeline_library_app_cache"},
         {"VKD3D_SHADER_MODEL", "SELECT", "6_0", "6_1", "6_2", "6_3", "6_4", "6_5", "6_6", "6_7"},
         {"WRAPPER_BLIT", "CHECKBOX", "0", "1"},
         {"FD_DEV_FEATURES", "SELECT_MULTIPLE", "enable_tp_ubwc_flag_hint=1", "storage_8bit=1"},
