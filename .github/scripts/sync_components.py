@@ -208,13 +208,22 @@ def main():
             import traceback
             traceback.print_exc()
     
-    # 输出结果供workflow判断
+    # 输出结果供workflow判断（使用GITHUB_OUTPUT替代已废弃的::set-output）
+    github_output = os.environ.get("GITHUB_OUTPUT", "")
     if any_updated:
-        print("\n::set-output name=has_updates::true")
         print("有组件更新，需要提交")
+        if github_output:
+            with open(github_output, "a") as f:
+                f.write("has_updates=true\n")
+        else:
+            print("::set-output name=has_updates::true")
     else:
-        print("\n::set-output name=has_updates::false")
         print("所有组件已是最新")
+        if github_output:
+            with open(github_output, "a") as f:
+                f.write("has_updates=false\n")
+        else:
+            print("::set-output name=has_updates::false")
 
 if __name__ == "__main__":
     main()

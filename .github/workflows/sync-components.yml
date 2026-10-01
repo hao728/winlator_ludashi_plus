@@ -44,12 +44,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "feat: 自动同步上游组件最新版本
-
-由 GitHub Actions 自动同步，包含：
-- panDXVK 最新版本（DXVK组件）
-
-后续可在 .github/scripts/sync_components.py 的 COMPONENTS 中添加更多组件源。" || echo "无变更可提交"
+          git commit -m "feat: 自动同步上游组件最新版本（panDXVK等）" || echo "无变更可提交"
           git push || echo "推送失败或无变更"
 
       - name: 无更新通知
