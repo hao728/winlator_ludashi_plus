@@ -91,6 +91,8 @@ public class GameRestorePackageManager {
         // BUG1：渲染器与Vulkan Wrapper
         public boolean rendererNative;
         public String graphicsWrapper;
+        // BUG1修复：Vulkan渲染驱动ID（如turnip-26.2.0-b9），默认"system"
+        public String rendererDriverId;
         // BUG4：Wine运行环境完整性警告
         public String wineRuntimeWarning;
         // v4：快捷方式信息（仅文件名和目录名，不含本地路径）
@@ -895,18 +897,15 @@ public class GameRestorePackageManager {
         // OpenGL驱动（graphicsDriver，附Vulkan API版本）
         boolean gpuDriverDiff = isNonDefault(info.graphicsDriver, Container.DEFAULT_GRAPHICS_DRIVER);
         String vkApiVer = getKvsValue(info.graphicsDriverConfig, "vulkanVersion");
-        String vkDriverVer = getKvsValue(info.graphicsDriverConfig, "version");
-        if (gpuDriverDiff || !vkDriverVer.isEmpty()) {
+        if (gpuDriverDiff || !vkApiVer.isEmpty()) {
             sb.append("• OpenGL驱动: ").append(isNotEmpty(info.graphicsDriver) ? info.graphicsDriver : Container.DEFAULT_GRAPHICS_DRIVER);
             if (!vkApiVer.isEmpty()) sb.append(" (Vulkan ").append(vkApiVer).append(')');
             sb.append('\n');
         }
-        // BUG2修复：Vulkan驱动版本（如turnip26.2.0）；version为空但驱动为turnip时显示"内置"
-        if (!vkDriverVer.isEmpty()) {
-            sb.append("• Vulkan驱动: ").append(vkDriverVer).append('\n');
-        } else if (info.graphicsDriver != null
-                && (info.graphicsDriver.contains("turnip") || info.graphicsDriver.contains("freedreno"))) {
-            sb.append("• Vulkan驱动: 内置\n");
+        // BUG1修复：Vulkan驱动ID（rendererDriverId字段），如turnip-26.2.0-b9
+        if (isNotEmpty(info.rendererDriverId) && !"system".equals(info.rendererDriverId)) {
+            String formatted = info.rendererDriverId.replaceFirst("-", " ");
+            sb.append("• Vulkan驱动: ").append(formatted).append('\n');
         }
         // BUG2修复：Vulkan Wrapper始终显示（非空即显示），默认wrapper标注"(Current)"
         String gw = info.graphicsWrapper;
@@ -1096,6 +1095,8 @@ public class GameRestorePackageManager {
             // BUG1：渲染器与Vulkan Wrapper
             info.rendererNative = metadata.optBoolean("rendererNative", false);
             info.graphicsWrapper = metadata.optString("graphicsWrapper", Container.DEFAULT_GRAPHICS_WRAPPER);
+            // BUG1修复：读取Vulkan渲染驱动ID
+            info.rendererDriverId = metadata.optString("rendererDriverId", "system");
 
             JSONArray components = metadata.optJSONArray("requiredComponents");
             if (components != null) {
@@ -1236,6 +1237,8 @@ public class GameRestorePackageManager {
         metadata.put("rendererNative", container.getRendererNative());
         String gw = container.getGraphicsWrapper();
         metadata.put("graphicsWrapper", gw != null ? gw : Container.DEFAULT_GRAPHICS_WRAPPER);
+        // BUG1修复：导出Vulkan渲染驱动ID
+        metadata.put("rendererDriverId", container.getRendererDriverId() != null ? container.getRendererDriverId() : "system");
 
         // v3：完整依赖列表
         JSONArray components = new JSONArray();
