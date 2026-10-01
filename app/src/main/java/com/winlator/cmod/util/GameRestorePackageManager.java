@@ -290,7 +290,7 @@ public class GameRestorePackageManager {
         try {
             // BUG3：导入进度重新分配 0-100%
             // 0-10%：解压并解析metadata
-            callback.onProgress(3, "解压数据包...");
+            callback.onProgress(3, "解析数据包...");
             unzipFile(packageFile, tempDir);
 
             callback.onProgress(7, "读取元数据...");
@@ -375,6 +375,7 @@ public class GameRestorePackageManager {
             newContainer.putExtra("box64Version", null);
             newContainer.putExtra("fexcoreVersion", null);
 
+            callback.onProgress(24, "写入容器配置...");
             callback.onProgress(25, "容器配置已加载");
 
             // 30-50%：还原Wine运行环境（含子进度）
@@ -413,7 +414,7 @@ public class GameRestorePackageManager {
                         throw new Exception("Wine运行环境还原失败: " + e.getMessage());
                     }
                     // v7：修复dosdevices符号链接、注册表/ini占位并设置目录权限
-                    callback.onProgress(47, "修复Wine环境（符号链接/权限）...");
+                    callback.onProgress(47, "重建盘符链接...");
                     fixWineEnvironment(destWineDir);
                     // BUG5：重建z:符号链接指向新容器的正确位置（旧链接指向旧设备绝对路径，已断裂）
                     rebuildZDriveSymlink(destWineDir, newContainerDir);
@@ -452,6 +453,11 @@ public class GameRestorePackageManager {
                     FileUtils.delete(newContainerDir);
                     throw new Exception("无法提取Wine运行环境（版本: " + containerWineVersion + "）。请确认该版本已正确安装。");
                 }
+                // BUG6修复：即使从模板提取，也确保dosdevices符号链接正确（c:/z:）。
+                // 模板可能符号链接断裂或缺失，此处统一重建。
+                File destWineDir = new File(newContainerDir, ".wine");
+                fixWineEnvironment(destWineDir);
+                rebuildZDriveSymlink(destWineDir, newContainerDir);
                 callback.onProgress(48, "容器创建成功，ID: " + newId);
             }
 
@@ -460,6 +466,7 @@ public class GameRestorePackageManager {
 
             // P0防护：导入后完整性校验，确保容器配置已落盘、关键运行环境就绪，
             // 缺失项通过onWarning上报（不阻断导入，但帮助定位闪退根因）。
+            callback.onProgress(51, "校验完整性...");
             verifyContainerIntegrity(newContainer, newContainerDir, containsWineRuntime, callback);
 
             // BUG1修复：将新创建的容器注册到 ContainerManager 内存列表，
@@ -522,7 +529,7 @@ public class GameRestorePackageManager {
                                 File destGameDir = new File(destGamesDir, gameDir.getName());
                                 // P2修复8：复制前先回调当前文件名，避免大游戏目录复制期间进度条看似卡住
                                 int preDirP = 62 + (int) ((dirIdx / (float) Math.max(1, dirTotal)) * 18);
-                                callback.onProgress(Math.min(80, preDirP), "正在复制: " + gameDir.getName());
+                                callback.onProgress(Math.min(80, preDirP), "解压游戏文件(" + (dirIdx+1) + "/" + dirTotal + "): " + gameDir.getName());
                                 copyDirectorySimple(gameDir, destGameDir);
                                 if (gameDirName != null && !gameDirName.isEmpty() && gameDir.getName().equals(gameDirName)) {
                                     if (executableName != null && !executableName.isEmpty()) {
@@ -537,7 +544,7 @@ public class GameRestorePackageManager {
                             }
                             dirIdx++;
                             int dirProgress = 62 + (int) ((dirIdx / (float) Math.max(1, dirTotal)) * 18);
-                            callback.onProgress(Math.min(80, dirProgress), "导入游戏文件: " + gameDir.getName());
+                            callback.onProgress(Math.min(80, dirProgress), "解压游戏文件(" + dirIdx + "/" + dirTotal + "): " + gameDir.getName());
                         }
                     }
 
@@ -1499,39 +1506,42 @@ public class GameRestorePackageManager {
                 writer.println("Type=Application");
                 writer.println("Icon=" + safeName);
                 writer.println("container_id:" + container.id);
-                writer.println();
-                writer.println("[Extra Data]");
-                if (workingDir != null && !workingDir.isEmpty()) {
-                    writer.println("working_dir=" + workingDir);
-                }
-                if (arguments != null && !arguments.isEmpty()) {
-                    writer.println("arguments=" + arguments);
-                }
-                String rendererDriverId = shortcutJson.optString("rendererDriverId", "");
-                if (!rendererDriverId.isEmpty()) {
-                    writer.println("rendererDriverId=" + rendererDriverId);
-                }
-                String rendererPresentMode = shortcutJson.optString("rendererPresentMode", "");
-                if (!rendererPresentMode.isEmpty()) {
-                    writer.println("rendererPresentMode=" + rendererPresentMode);
-                }
-                int rendererFilterMode = shortcutJson.optInt("rendererFilterMode", 0);
-                if (rendererFilterMode != 0) {
-                    writer.println("rendererFilterMode=" + rendererFilterMode);
-                }
-                // v6：应用快捷方式独立配置（per-shortcut）
-                JSONObject shortcutConfig = shortcutJson.optJSONObject("shortcutConfig");
-                if (shortcutConfig != null) {
-                    Iterator<String> keys = shortcutConfig.keys();
-                    while (keys.hasNext()) {
-                        String key = keys.next();
-                        String value = shortcutConfig.optString(key, "");
-                        if (!value.isEmpty()) {
-                            writer.println(key + "=" + value);
-                        }
+            }
+
+            // BUG5修复：通过Shortcut对象写入[Extra Data]段，确保格式与Winlator完全一致。
+            // 直接写文件可能导致Shortcut.loadData()解析异常或saveData()覆盖时丢失字段。
+            Shortcut shortcut = new Shortcut(container, desktopFile);
+            if (workingDir != null && !workingDir.isEmpty()) {
+                shortcut.putExtra("working_dir", workingDir);
+            }
+            if (arguments != null && !arguments.isEmpty()) {
+                shortcut.putExtra("arguments", arguments);
+            }
+            String rendererDriverId = shortcutJson.optString("rendererDriverId", "");
+            if (!rendererDriverId.isEmpty()) {
+                shortcut.putExtra("rendererDriverId", rendererDriverId);
+            }
+            String rendererPresentMode = shortcutJson.optString("rendererPresentMode", "");
+            if (!rendererPresentMode.isEmpty()) {
+                shortcut.putExtra("rendererPresentMode", rendererPresentMode);
+            }
+            int rendererFilterMode = shortcutJson.optInt("rendererFilterMode", 0);
+            if (rendererFilterMode != 0) {
+                shortcut.putExtra("rendererFilterMode", String.valueOf(rendererFilterMode));
+            }
+            // v6：应用快捷方式独立配置（per-shortcut）
+            JSONObject shortcutConfig = shortcutJson.optJSONObject("shortcutConfig");
+            if (shortcutConfig != null) {
+                Iterator<String> keys = shortcutConfig.keys();
+                while (keys.hasNext()) {
+                    String key = keys.next();
+                    String value = shortcutConfig.optString(key, "");
+                    if (!value.isEmpty()) {
+                        shortcut.putExtra(key, value);
                     }
                 }
             }
+            shortcut.saveData();
 
             return desktopFile.exists();
         } catch (Exception e) {
