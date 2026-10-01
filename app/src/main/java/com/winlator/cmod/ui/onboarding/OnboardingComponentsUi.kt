@@ -53,6 +53,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.animation.core.tween
+import kotlinx.coroutines.delay
 import com.winlator.cmod.contents.AdrenotoolsManager
 import com.winlator.cmod.contents.Downloader
 import com.winlator.cmod.contents.RemoteDriverCatalog
@@ -620,9 +622,12 @@ private fun AdrenoToolsDriverList(
                 val installed = manager.enumarateInstalledDrivers()
                 val info = mutableMapOf<String, String>()
                 for (id in installed) {
+                    val originalName = manager.getOriginalFileName(id)
                     val name = manager.getDriverName(id)
                     val version = manager.getDriverVersion(id)
                     val display = when {
+                        // 优先显示安装时的zip原文件名（如 adrenotools-turnip-26.2.0-b9.tzst）
+                        originalName.isNotEmpty() -> originalName.removeSuffix(".zip").removeSuffix(".tzst")
                         name.isNotEmpty() && version.isNotEmpty() -> "$name $version"
                         name.isNotEmpty() -> name
                         else -> id
@@ -660,7 +665,10 @@ private fun AdrenoToolsDriverList(
     }
 
     val filtered = remember(drivers, selectedRepo) {
-        if (selectedRepo == "全部") drivers else drivers.filter { it.repository == selectedRepo }
+        val list = if (selectedRepo == "全部") drivers else drivers.filter { it.repository == selectedRepo }
+        // 去重：按 name+tagName 去重，保留第一个（通常是最新的）
+        val seen = mutableSetOf<String>()
+        list.filter { seen.add("${it.name}|${it.tagName}") }
     }
 
     // 已安装驱动（不在在线列表中的也显示）
@@ -717,7 +725,7 @@ private fun AdrenoToolsDriverList(
                     ) {
                         Column(Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(id, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                MarqueeText(installedInfo[id] ?: id, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
                                 Spacer(Modifier.width(6.dp))
                                 Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.primaryContainer) {
                                     Text("已安装", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp))
@@ -778,7 +786,7 @@ private fun AdrenoToolsDriverList(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text(driver.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            MarqueeText(driver.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.height(2.dp))
                             Row {
                                 if (driver.tagName.isNotEmpty()) {
@@ -809,7 +817,9 @@ private fun AdrenoToolsDriverList(
                                 installingUrl = driver.url
                                 kotlin.concurrent.thread {
                                     try {
-                                        val tmpFile = java.io.File(context.cacheDir, "driver_${System.currentTimeMillis()}.zip")
+                                        // 从URL提取原始文件名（如 Turnip-v26.3.0-xxx.zip），用于已安装列表显示
+                                        val originalName = driver.url.substringAfterLast('/').ifEmpty { "driver_${System.currentTimeMillis()}.zip" }
+                                        val tmpFile = java.io.File(context.cacheDir, originalName)
                                         val success = Downloader.downloadFile(driver.url, tmpFile)
                                         if (success) {
                                             val manager = AdrenotoolsManager(context)
@@ -851,4 +861,60 @@ private fun AdrenoToolsDriverList(
             }
         }
     }
+}
+
+/**
+ * 缩短驱动名称，去除冗余日期和重复前缀，保留关键版本信息。
+ * 例："Turnip-v26.3.0-20260930-r5-710-720" → "Turnip v26.3.0 r5 (710-720)"
+ *     "Turnip Gen8 V37 / Turnip v26.3.0-R6" → 原样（已较短）
+ */
+private fun shortenDriverName(name: String): String {
+    if (name.length <= 28) return name
+    // 移除8位日期（如20260930）
+    var result = name.replace(Regex("\\d{8}"), "").trim()
+    // 将连续的-或_替换为空格
+    result = result.replace(Regex("[-_]+"), " ").trim()
+    // 压缩多余空格
+    result = result.replace(Regex("\\s+"), " ")
+    // 如果仍超过28字符，截断并加省略号
+    if (result.length > 28) {
+        result = result.take(26) + "…"
+    }
+    return result
+}
+
+/**
+ * 自定义跑马灯Text组件：长文本自动横向滚动显示完整内容。
+ * 不依赖basicMarquee的Experimental API，兼容性更好。
+ */
+@Composable
+private fun MarqueeText(
+    text: String,
+    modifier: Modifier = Modifier,
+    style: androidx.compose.ui.text.TextStyle = androidx.compose.ui.text.TextStyle.Default,
+    fontWeight: FontWeight? = null
+) {
+    val scrollState = rememberScrollState()
+    LaunchedEffect(text) {
+        // 先停留在开头，延迟后再开始滚动
+        delay(1000)
+        while (true) {
+            if (scrollState.maxValue > 0) {
+                scrollState.animateScrollTo(scrollState.maxValue, animationSpec = tween(durationMillis = 5000))
+                delay(600)
+                scrollState.scrollTo(0)
+                delay(800)
+            } else {
+                delay(1000)
+            }
+        }
+    }
+    Text(
+        text = text,
+        style = style,
+        fontWeight = fontWeight,
+        maxLines = 1,
+        softWrap = false,
+        modifier = modifier.horizontalScroll(scrollState, enabled = false)
+    )
 }

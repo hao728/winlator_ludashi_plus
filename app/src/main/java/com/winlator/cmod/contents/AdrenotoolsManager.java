@@ -86,6 +86,19 @@ public class AdrenotoolsManager {
         return driverVersion;
     }
 
+    /** 获取安装时的原始zip文件名（用于已安装列表显示，比meta.json中的name更有辨识度） */
+    public String getOriginalFileName(String adrenoToolsDriverId) {
+        String originalFileName = "";
+        File driverPath = new File(adrenotoolsContentDir, adrenoToolsDriverId);
+        try {
+            File metaProfile = new File(driverPath, "meta.json");
+            JSONObject jsonObject = new JSONObject(FileUtils.readString(metaProfile));
+            originalFileName = jsonObject.optString("originalFileName", "");
+        }
+        catch (Exception ignored) {}
+        return originalFileName;
+    }
+
     public String getDriverPath(String adrenotoolsDriverId) {
         return adrenotoolsContentDir.getAbsolutePath() + "/" + adrenotoolsDriverId + "/";
     }
@@ -207,6 +220,14 @@ public class AdrenotoolsManager {
         ZipInputStream zis;
         InputStream is;
         String name = "";
+        // 从Uri获取原始zip文件名，用于已安装列表显示
+        String originalFileName = "";
+        try {
+            String seg = driverUri.getLastPathSegment();
+            if (seg != null && !seg.isEmpty()) {
+                originalFileName = seg.contains("/") ? seg.substring(seg.lastIndexOf('/') + 1) : seg;
+            }
+        } catch (Exception ignored) {}
         
         try {
             is = mContext.getContentResolver().openInputStream(driverUri);
@@ -218,7 +239,16 @@ public class AdrenotoolsManager {
                 entry = zis.getNextEntry();
             }
             zis.close();
-            if (new File(tmpDir, "meta.json").exists()) {
+            File metaFile = new File(tmpDir, "meta.json");
+            if (metaFile.exists()) {
+                // 将原始文件名写入meta.json，供已安装列表显示
+                if (!originalFileName.isEmpty()) {
+                    try {
+                        JSONObject metaJson = new JSONObject(FileUtils.readString(metaFile));
+                        metaJson.put("originalFileName", originalFileName);
+                        FileUtils.writeString(metaFile, metaJson.toString());
+                    } catch (Exception ignored) {}
+                }
                 name = getDriverName(tmpDir.getName());
                 File dst = new File(adrenotoolsContentDir, name);
                 if (!dst.exists() && !name.equals(""))
