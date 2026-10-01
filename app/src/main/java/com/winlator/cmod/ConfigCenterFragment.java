@@ -920,16 +920,16 @@ public class ConfigCenterFragment extends Fragment {
             // OpenGL驱动（graphicsDriver，附Vulkan API版本）
             boolean gpuDriverDiff = isDiff(tmp.getGraphicsDriver(), Container.DEFAULT_GRAPHICS_DRIVER);
             String vkApiVer = kvs(tmp.getGraphicsDriverConfig(), "vulkanVersion");
-            String vkDriverVer = kvs(tmp.getGraphicsDriverConfig(), "version");
-            if (gpuDriverDiff || !vkDriverVer.isEmpty()) {
+            if (gpuDriverDiff) {
                 sb.append("• OpenGL驱动: ").append(notEmpty(tmp.getGraphicsDriver()) ? tmp.getGraphicsDriver() : Container.DEFAULT_GRAPHICS_DRIVER);
                 if (!vkApiVer.isEmpty()) sb.append(" (Vulkan ").append(vkApiVer).append(')');
                 sb.append('\n');
             }
-            // Vulkan驱动：仅当 graphicsDriverConfig.version（turnip版本号）非空时显示。
-            // zink 是 OpenGL 驱动，已在上一行 OpenGL驱动 中展示，不应出现在 Vulkan 驱动行。
-            if (!vkDriverVer.isEmpty()) {
-                sb.append("• Vulkan驱动: ").append(vkDriverVer).append('\n');
+            // Vulkan驱动：驱动ID存储在 rendererDriverId 字段（默认"system"表示用系统驱动），
+            // 仅当显式选择了非系统驱动时才显示。turnip-26.2.0-b9 格式化为 turnip 26.2.0-b9。
+            String rendererDriverId = tmp.getRendererDriverId();
+            if (notEmpty(rendererDriverId) && !"system".equals(rendererDriverId)) {
+                sb.append("• Vulkan驱动: ").append(formatVulkanDriver(rendererDriverId)).append('\n');
             }
             // BUG2修复：Vulkan Wrapper始终显示（非空即显示），默认wrapper标注"(Current)"
             String gw = tmp.getGraphicsWrapper();
@@ -1022,6 +1022,16 @@ public class ConfigCenterFragment extends Fragment {
 
     private static boolean notEmpty(String value) {
         return value != null && !value.isEmpty();
+    }
+
+    /** 格式化Vulkan驱动ID：turnip-26.2.0-b9 -> turnip 26.2.0-b9（首个'-'替换为空格）。 */
+    private static String formatVulkanDriver(String id) {
+        if (id == null) return "";
+        int idx = id.indexOf('-');
+        if (idx > 0 && idx < id.length() - 1) {
+            return id.substring(0, idx) + " " + id.substring(idx + 1);
+        }
+        return id;
     }
 
     private static String kvs(String config, String key) {
