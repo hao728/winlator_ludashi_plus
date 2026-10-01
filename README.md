@@ -41,7 +41,7 @@ password). Release builds require `Untitled.jks` and signing credentials.
 
 # Installation
 
-1.  Download and install the latest APK from this repository's [Releases section](https://github.com/mihsian77/winlator_ludashi_plus/releases) (choose your preferred build: `dev-vanilla`, `ludashi`, or `redmagic`).
+1.  Download and install the latest APK from this repository's [Releases section](https://github.com/winlator-123/winlator_ludashi_plus/releases) (choose your preferred build: `dev-vanilla`, `ludashi`, or `redmagic`).
 2.  Launch the app and wait for the installation process to finish.
 
 # Useful Tips
