@@ -93,6 +93,10 @@ public class GameRestorePackageManager {
         public String graphicsWrapper;
         // BUG1修复：Vulkan渲染驱动ID（如turnip-26.2.0-b9），默认"system"
         public String rendererDriverId;
+        // BUG4：补全摘要缺失字段
+        public String cpuList;
+        public String desktopTheme;
+        public String lcAll;
         // BUG4：Wine运行环境完整性警告
         public String wineRuntimeWarning;
         // v4：快捷方式信息（仅文件名和目录名，不含本地路径）
@@ -907,15 +911,6 @@ public class GameRestorePackageManager {
             String formatted = info.rendererDriverId.replaceFirst("-", " ");
             sb.append("• Vulkan驱动: ").append(formatted).append('\n');
         }
-        // BUG2修复：Vulkan Wrapper始终显示（非空即显示），默认wrapper标注"(Current)"
-        String gw = info.graphicsWrapper;
-        if (isNotEmpty(gw)) {
-            if (Container.DEFAULT_GRAPHICS_WRAPPER.equals(gw)) {
-                sb.append("• Vulkan Wrapper: Wrapper (Current)\n");
-            } else {
-                sb.append("• Vulkan Wrapper: ").append(gw).append('\n');
-            }
-        }
         // BUG2：DXWrapper（附DXVK和VKD3D版本）
         String dxvkVer = getKvsValue(info.dxwrapperConfig, "version");
         String vkd3dVer = getKvsValue(info.dxwrapperConfig, "vkd3dVersion");
@@ -930,6 +925,22 @@ public class GameRestorePackageManager {
                 sb.append("）");
             }
             sb.append('\n');
+        }
+        // BUG8：Windows组件（wincomponents）
+        if (isNotEmpty(info.wincomponents) && !info.wincomponents.equals(Container.DEFAULT_WINCOMPONENTS)) {
+            try {
+                KeyValueSet winCompKvs = new KeyValueSet(info.wincomponents);
+                StringBuilder enabled = new StringBuilder();
+                for (String[] kv : winCompKvs) {
+                    if ("1".equals(kv[1])) {
+                        if (enabled.length() > 0) enabled.append(", ");
+                        enabled.append(kv[0]);
+                    }
+                }
+                if (enabled.length() > 0) {
+                    sb.append("• Windows组件: ").append(enabled).append('\n');
+                }
+            } catch (Exception ignored) {}
         }
         // BUG3：转译器：Box64 / FEXCore（版本+预设），确保不同时显示
         String emu = info.emulator;
@@ -966,9 +977,29 @@ public class GameRestorePackageManager {
         if (isNonDefault(info.audioDriver, Container.DEFAULT_AUDIO_DRIVER)) {
             sb.append("• 音频驱动: ").append(info.audioDriver).append('\n');
         }
-        // 环境变量（非默认时只提示已自定义，不暴露具体变量）
+        // 环境变量（非默认时显示具体摘要）
         if (isNotEmpty(info.envVars) && !info.envVars.equals(Container.DEFAULT_ENV_VARS)) {
-            sb.append("• 环境变量: 已自定义\n");
+            String env = info.envVars;
+            StringBuilder envSummary = new StringBuilder();
+            if (env.contains("mesa_glthread=false")) envSummary.append("mesa_glthread=关 ");
+            if (env.contains("WINEESYNC=0")) envSummary.append("ESYNC=关 ");
+            if (env.contains("DXVK_HUD")) envSummary.append("DXVK_HUD ");
+            if (env.contains("TU_DEBUG")) envSummary.append("TU_DEBUG ");
+            if (envSummary.length() == 0) envSummary.append("已自定义");
+            sb.append("• 环境变量: ").append(envSummary.toString().trim()).append('\n');
+        }
+        // CPU亲和性
+        if (isNotEmpty(info.cpuList)) {
+            sb.append("• CPU亲和性: 已自定义\n");
+        }
+        // 桌面主题
+        if (isNotEmpty(info.desktopTheme)
+                && !info.desktopTheme.equals(com.winlator.cmod.core.WineThemeManager.DEFAULT_DESKTOP_THEME)) {
+            sb.append("• 桌面主题: 已自定义\n");
+        }
+        // 区域设置
+        if (isNotEmpty(info.lcAll)) {
+            sb.append("• 区域设置: ").append(info.lcAll).append('\n');
         }
 
         return sb.toString().trim();
@@ -1097,6 +1128,10 @@ public class GameRestorePackageManager {
             info.graphicsWrapper = metadata.optString("graphicsWrapper", Container.DEFAULT_GRAPHICS_WRAPPER);
             // BUG1修复：读取Vulkan渲染驱动ID
             info.rendererDriverId = metadata.optString("rendererDriverId", "system");
+            // BUG4：补全摘要缺失字段读取
+            info.cpuList = metadata.optString("cpuList", "");
+            info.desktopTheme = metadata.optString("desktopTheme", "");
+            info.lcAll = metadata.optString("lcAll", "");
 
             JSONArray components = metadata.optJSONArray("requiredComponents");
             if (components != null) {
@@ -1239,6 +1274,10 @@ public class GameRestorePackageManager {
         metadata.put("graphicsWrapper", gw != null ? gw : Container.DEFAULT_GRAPHICS_WRAPPER);
         // BUG1修复：导出Vulkan渲染驱动ID
         metadata.put("rendererDriverId", container.getRendererDriverId() != null ? container.getRendererDriverId() : "system");
+        // BUG4：补全摘要缺失字段导出
+        metadata.put("cpuList", container.getCPUList() != null ? container.getCPUList() : "");
+        metadata.put("desktopTheme", container.getDesktopTheme() != null ? container.getDesktopTheme() : "");
+        metadata.put("lcAll", container.getLC_ALL() != null ? container.getLC_ALL() : "");
 
         // v3：完整依赖列表
         JSONArray components = new JSONArray();

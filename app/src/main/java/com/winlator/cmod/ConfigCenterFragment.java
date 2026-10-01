@@ -95,6 +95,7 @@ public class ConfigCenterFragment extends Fragment {
         String source;      // local / steam
         String wineVersion;
         String graphicsDriver;
+        String rendererDriverId; // Vulkan驱动ID（默认"system"），用于列表预览VK行
         String dxwrapper;
         String emulator;
         long modifiedAt;
@@ -347,6 +348,7 @@ public class ConfigCenterFragment extends Fragment {
             if (e.source.isEmpty()) e.source = defaultSource;
             e.wineVersion = json.optString("wineVersion", "");
             e.graphicsDriver = json.optString("graphicsDriver", "");
+            e.rendererDriverId = json.optString("rendererDriverId", "");
             e.dxwrapper = json.optString("dxwrapper", "");
             e.emulator = json.optString("emulator", "");
             e.modifiedAt = file.lastModified();
@@ -465,6 +467,7 @@ public class ConfigCenterFragment extends Fragment {
             if (e.source.isEmpty()) e.source = defaultSource;
             e.wineVersion = json.optString("wineVersion", "");
             e.graphicsDriver = json.optString("graphicsDriver", "");
+            e.rendererDriverId = json.optString("rendererDriverId", "");
             e.dxwrapper = json.optString("dxwrapper", "");
             e.emulator = json.optString("emulator", "");
             e.modifiedAt = file.lastModified();
@@ -551,7 +554,8 @@ public class ConfigCenterFragment extends Fragment {
             TextView summary = new TextView(ctx);
             summary.setTextColor(0xFFB0B6C0);
             summary.setTextSize(12);
-            summary.setMaxLines(1);
+            // 预览摘要为两行（Wine/GL/VK 与 DXWrapper/转译器），允许两行展示，超出仍按尾部省略
+            summary.setMaxLines(2);
             summary.setEllipsize(android.text.TextUtils.TruncateAt.END);
             LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -690,11 +694,26 @@ public class ConfigCenterFragment extends Fragment {
     }
 
     private String buildSummary(ConfigEntry e) {
+        // 第一行：Wine / GL驱动 / VK驱动
+        StringBuilder line1 = new StringBuilder();
+        appendPart(line1, "Wine", e.wineVersion);
+        appendPart(line1, "GL", e.graphicsDriver);
+        // VK驱动：仅当显式选择了非系统驱动时显示，格式化 turnip-26.2.0-b9 -> turnip 26.2.0-b9
+        String vk = e.rendererDriverId;
+        if (notEmpty(vk) && !"system".equals(vk)) {
+            appendPart(line1, "VK", formatVulkanDriver(vk));
+        }
+        // 第二行：DXWrapper / 转译器
+        StringBuilder line2 = new StringBuilder();
+        appendPart(line2, "DXWrapper", e.dxwrapper);
+        appendPart(line2, "转译器", e.emulator);
+
         StringBuilder sb = new StringBuilder();
-        appendPart(sb, "Wine", e.wineVersion);
-        appendPart(sb, "驱动", e.graphicsDriver);
-        appendPart(sb, "DXWrapper", e.dxwrapper);
-        appendPart(sb, "模拟器", e.emulator);
+        if (line1.length() > 0) sb.append(line1);
+        if (line2.length() > 0) {
+            if (sb.length() > 0) sb.append('\n');
+            sb.append(line2);
+        }
         return sb.length() == 0 ? "无关键配置" : sb.toString();
     }
 
@@ -931,16 +950,7 @@ public class ConfigCenterFragment extends Fragment {
             if (notEmpty(rendererDriverId) && !"system".equals(rendererDriverId)) {
                 sb.append("• Vulkan驱动: ").append(formatVulkanDriver(rendererDriverId)).append('\n');
             }
-            // BUG2修复：Vulkan Wrapper始终显示（非空即显示），默认wrapper标注"(Current)"
-            String gw = tmp.getGraphicsWrapper();
-            if (notEmpty(gw)) {
-                if (Container.DEFAULT_GRAPHICS_WRAPPER.equals(gw)) {
-                    sb.append("• Vulkan Wrapper: Wrapper (Current)\n");
-                } else {
-                    sb.append("• Vulkan Wrapper: ").append(gw).append('\n');
-                }
-            }
-            // BUG2：DXWrapper（附DXVK和VKD3D版本）
+            // DXWrapper（附DXVK和VKD3D版本）
             String dxvkVer = kvs(tmp.getDXWrapperConfig(), "version");
             String vkd3dVer = kvs(tmp.getDXWrapperConfig(), "vkd3dVersion");
             boolean dxwrapperDiff = isDiff(tmp.getDXWrapper(), Container.DEFAULT_DXWRAPPER);
@@ -984,22 +994,18 @@ public class ConfigCenterFragment extends Fragment {
             if (isDiff(tmp.getAudioDriver(), Container.DEFAULT_AUDIO_DRIVER)) {
                 sb.append("• 音频驱动: ").append(tmp.getAudioDriver()).append('\n');
             }
-            // P2修复5：Windows组件（wincomponents），与默认值不同时列出已启用项
+            // Windows组件（wincomponents）：非空即解析，列出所有已启用项（值为"1"），不与默认值对比
             String wincomp = tmp.getWinComponents();
-            if (notEmpty(wincomp) && !wincomp.equals(Container.DEFAULT_WINCOMPONENTS)) {
+            if (notEmpty(wincomp)) {
                 StringBuilder enabled = new StringBuilder();
                 try {
                     com.winlator.cmod.core.KeyValueSet kvs = new com.winlator.cmod.core.KeyValueSet(wincomp);
-                    com.winlator.cmod.core.KeyValueSet defKvs = new com.winlator.cmod.core.KeyValueSet(Container.DEFAULT_WINCOMPONENTS);
                     for (String[] pair : kvs) {
                         String key = pair[0];
                         String val = pair.length > 1 ? pair[1] : "";
                         if ("1".equals(val)) {
-                            String defVal = defKvs.get(key);
-                            if (!"1".equals(defVal)) {
-                                if (enabled.length() > 0) enabled.append(", ");
-                                enabled.append(key);
-                            }
+                            if (enabled.length() > 0) enabled.append(", ");
+                            enabled.append(key);
                         }
                     }
                 } catch (Exception ignored) {}
@@ -1007,8 +1013,30 @@ public class ConfigCenterFragment extends Fragment {
                 sb.append(enabled.length() > 0 ? enabled.toString() : "已自定义");
                 sb.append('\n');
             }
+            // 环境变量：提炼关键非默认项摘要，无命中的知名项时显示"已自定义"
             if (notEmpty(tmp.getEnvVars()) && !tmp.getEnvVars().equals(Container.DEFAULT_ENV_VARS)) {
-                sb.append("• 环境变量: 已自定义\n");
+                String env = tmp.getEnvVars();
+                StringBuilder envSummary = new StringBuilder();
+                if (env.contains("mesa_glthread=false")) envSummary.append("mesa_glthread=关 ");
+                if (env.contains("WINEESYNC=0")) envSummary.append("ESYNC=关 ");
+                if (env.contains("DXVK_HUD")) envSummary.append("DXVK_HUD ");
+                if (env.contains("TU_DEBUG")) envSummary.append("TU_DEBUG ");
+                sb.append("• 环境变量: ")
+                  .append(envSummary.length() > 0 ? envSummary.toString().trim() : "已自定义")
+                  .append('\n');
+            }
+            // CPU亲和性：自定义了核心绑定即显示
+            if (notEmpty(tmp.getCPUList())) {
+                sb.append("• CPU亲和性: 已自定义\n");
+            }
+            // 桌面主题：与默认主题不同时显示
+            if (notEmpty(tmp.getDesktopTheme())
+                    && !tmp.getDesktopTheme().equals(com.winlator.cmod.core.WineThemeManager.DEFAULT_DESKTOP_THEME)) {
+                sb.append("• 桌面主题: 已自定义\n");
+            }
+            // 区域设置：非空即显示具体值
+            if (notEmpty(tmp.getLC_ALL())) {
+                sb.append("• 区域设置: ").append(tmp.getLC_ALL()).append('\n');
             }
             return sb.toString().trim();
         } catch (Exception e) {
@@ -1154,9 +1182,17 @@ public class ConfigCenterFragment extends Fragment {
             TextView depView = new TextView(ctx);
             StringBuilder dep = new StringBuilder();
             dep.append("Wine版本: ");
-            if (wineBundled) dep.append("数据包内置 ✓");
-            else if (wineInstalled) dep.append("已安装 ✓");
-            else dep.append("未安装 ✗");
+            String wineVer = info != null ? info.wineVersion : "";
+            if (wineBundled) {
+                // 内置运行环境：显示具体版本号，无版本号时回退为"数据包内置"
+                if (notEmpty(wineVer)) dep.append(wineVer).append("（内置）✓");
+                else dep.append("数据包内置 ✓");
+            } else if (wineInstalled) {
+                if (notEmpty(wineVer)) dep.append(wineVer).append(" 已安装 ✓");
+                else dep.append("已安装 ✓");
+            } else {
+                dep.append("未安装 ✗");
+            }
             depView.setText(dep.toString());
             depView.setTextSize(13);
             depView.setLineSpacing(dp(2), 1.25f);
