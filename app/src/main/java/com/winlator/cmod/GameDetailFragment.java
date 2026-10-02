@@ -363,9 +363,14 @@ public class GameDetailFragment extends Fragment {
                 .setView(scrollView)
                 .setPositiveButton("确认导出", (dialog, which) -> {
                     int checkedId = radioGroup.getCheckedRadioButtonId();
-                    boolean includeGameFiles = (checkedId == rb2.getId() || checkedId == rb3.getId());
-                    boolean includeWineRuntime = (checkedId == rb3.getId());
-                    doExport(includeGameFiles, true, includeWineRuntime);
+                    if (checkedId == rb1.getId()) {
+                        // 仅配置：导出新格式JSON
+                        exportConfigOnly();
+                    } else {
+                        boolean includeGameFiles = (checkedId == rb2.getId() || checkedId == rb3.getId());
+                        boolean includeWineRuntime = (checkedId == rb3.getId());
+                        doExport(includeGameFiles, true, includeWineRuntime);
+                    }
                 })
                 .setNegativeButton("取消", null)
                 .show();
@@ -376,6 +381,35 @@ public class GameDetailFragment extends Fragment {
         if (bytes < 1024 * 1024) return String.format(java.util.Locale.US, "%.1f KB", bytes / 1024.0);
         if (bytes < 1024 * 1024 * 1024) return String.format(java.util.Locale.US, "%.1f MB", bytes / (1024.0 * 1024));
         return String.format(java.util.Locale.US, "%.2f GB", bytes / (1024.0 * 1024 * 1024));
+    }
+
+    /**
+     * 仅配置导出：新格式JSON（meta + container_config + shortcut_config + components）
+     */
+    private void exportConfigOnly() {
+        final Context context = getContext();
+        if (context == null || shortcut == null || shortcut.container == null) return;
+
+        new Thread(() -> {
+            try {
+                org.json.JSONObject config = com.winlator.cmod.util.GameConfigSerializer
+                        .exportConfig(context, shortcut, shortcut.container);
+                String path = com.winlator.cmod.util.GameConfigSerializer
+                        .saveConfigToFile(context, config, shortcut.name);
+
+                if (getActivity() != null) {
+                    getActivity().runOnUiThread(() ->
+                            android.widget.Toast.makeText(context,
+                                    "配置已导出: " + path, android.widget.Toast.LENGTH_LONG).show());
+                }
+            } catch (Exception e) {
+                if (getActivity() != null) {
+                    getActivity().runOnUiThread(() ->
+                            android.widget.Toast.makeText(context,
+                                    "导出失败: " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show());
+                }
+            }
+        }).start();
     }
 
     /**

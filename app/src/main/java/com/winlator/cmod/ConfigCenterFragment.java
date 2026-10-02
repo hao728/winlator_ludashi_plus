@@ -924,8 +924,19 @@ public class ConfigCenterFragment extends Fragment {
      */
     private String buildConfigSummary(JSONObject json) {
         try {
+            // 格式归一化：新格式从container_config提取，Bannerlator格式转换，旧格式直接用
+            JSONObject containerJson;
+            if (json.has("container_config")) {
+                containerJson = json.getJSONObject("container_config");
+            } else if (com.winlator.cmod.util.GameConfigSerializer.isBannerlatorFormat(json)) {
+                JSONObject converted = com.winlator.cmod.util.GameConfigSerializer.convertFromBannerlator(json);
+                containerJson = converted.getJSONObject("container_config");
+            } else {
+                containerJson = json;
+            }
+
             Container tmp = new Container(0);
-            tmp.loadData(json);
+            tmp.loadData(containerJson);
             StringBuilder sb = new StringBuilder();
             String defaultWine = WineInfo.MAIN_WINE_VERSION.identifier();
 
@@ -1345,66 +1356,40 @@ public class ConfigCenterFragment extends Fragment {
                 if (srcText == null) throw new Exception("配置文件读取失败");
                 JSONObject src = new JSONObject(srcText);
 
-                // P0修复2-A：Container合法字段白名单（参考 Container.java 成员变量）。
-                // 只写入白名单内的键，防止 device/meta/notes/iconFile/requiredComponents 等导出元信息污染容器配置。
-                final java.util.Set<String> CONTAINER_WHITELIST = new java.util.HashSet<>(java.util.Arrays.asList(
-                        "screenSize", "envVars", "graphicsDriver", "graphicsDriverConfig",
-                        "dxwrapper", "dxwrapperConfig", "wincomponents", "audioDriver",
-                        "drives", "wineVersion", "showFPS", "rendererNative",
-                        "rendererPresentMode", "rendererDriverId", "rendererFilterMode",
-                        "rendererSwapRB", "fullscreenStretched", "startupSelection",
-                        "cpuList", "cpuListWoW64", "syncCpuTopology", "desktopTheme",
-                        "fexcoreVersion", "fexcorePreset", "box64Preset", "midiSoundFont",
-                        "inputType", "lc_all", "primaryController", "controllerMapping",
-                        "box64Version", "emulator", "exclusiveXInput", "extraData",
-                        // 身份字段保留不覆盖（显式列出以便后续维护）
-                        "id", "name", "rootDir"
-                ));
-
-                // 读取目标容器现有配置，逐字段覆盖（保留 id/name/rootDir 等身份信息）
-                File cfgFile = targetRef.getConfigFile();
-                JSONObject dst = cfgFile.exists()
-                        ? new JSONObject(FileUtils.readString(cfgFile))
-                        : new JSONObject();
-
-                Iterator<String> it = src.keys();
-                while (it.hasNext()) {
-                    String key = it.next();
-                    // 白名单过滤：只允许合法 Container 字段写入容器配置
-                    if (!CONTAINER_WHITELIST.contains(key)) continue;
-                    // 不覆盖目标容器的身份信息
-                    if ("id".equals(key) || "name".equals(key)) continue;
-                    dst.put(key, src.get(key));
-                }
-                FileUtils.writeString(cfgFile, dst.toString());
-                // 让内存中的容器对象重新加载并持久化
-                targetRef.loadData(dst);
-                targetRef.saveData();
-
-                // P0修复2-B：如果源配置包含 shortcutConfig（per-shortcut 独立配置），
-                // 遍历其键值对写入 Shortcut 的 extraData 并持久化到 .desktop 文件。
-                if (src.has("shortcutConfig") && !src.isNull("shortcutConfig")) {
-                    JSONObject scConfig = src.getJSONObject("shortcutConfig");
-                    Iterator<String> scIt = scConfig.keys();
-                    boolean scChanged = false;
-                    while (scIt.hasNext()) {
-                        String scKey = scIt.next();
-                        Object scVal = scConfig.get(scKey);
-                        // putExtra 存储 String，做类型转换
-                        String strVal;
-                        if (scVal == null) strVal = null;
-                        else if (scVal instanceof Boolean) strVal = ((Boolean) scVal) ? "1" : "0";
-                        else strVal = String.valueOf(scVal);
-                        shortcutRef.putExtra(scKey, strVal);
-                        scChanged = true;
+                // 格式识别与归一化：统一转换为新格式（container_config + shortcut_config）
+                JSONObject normalized;
+                if (com.winlator.cmod.util.GameConfigSerializer.isBannerlatorFormat(src)) {
+                    // Bannerlator格式 → 新格式
+                    normalized = com.winlator.cmod.util.GameConfigSerializer.convertFromBannerlator(src);
+                } else if (src.has("container_config")) {
+                    // 已经是新格式
+                    normalized = src;
+                } else {
+                    // 旧格式兼容：根级别字段视为container_config，shortcutConfig视为shortcut_config
+                    normalized = new JSONObject();
+                    JSONObject cc = new JSONObject();
+                    Iterator<String> it = src.keys();
+                    while (it.hasNext()) {
+                        String key = it.next();
+                        if ("shortcutConfig".equals(key)) continue;
+                        cc.put(key, src.get(key));
                     }
-                    if (scChanged) shortcutRef.saveData();
+                    normalized.put("container_config", cc);
+                    if (src.has("shortcutConfig")) {
+                        normalized.put("shortcut_config", src.getJSONObject("shortcutConfig"));
+                    }
                 }
+
+                // 使用统一导入逻辑
+                boolean hasShortcutConfig = com.winlator.cmod.util.GameConfigSerializer
+                        .importConfig(normalized, targetRef, shortcutRef);
+
+                final String msg = hasShortcutConfig
+                        ? "已将「" + config.gameName + "」的配置（含快捷方式独立配置）应用到「" + shortcut.name + "」"
+                        : "已将「" + config.gameName + "」的配置应用到「" + shortcut.name + "」";
 
                 if (getActivity() != null) getActivity().runOnUiThread(() ->
-                        Toast.makeText(getContext(),
-                                "已将「" + config.gameName + "」的配置应用到「" + shortcut.name + "」",
-                                Toast.LENGTH_LONG).show());
+                        Toast.makeText(getContext(), msg, Toast.LENGTH_LONG).show());
             } catch (Exception ex) {
                 if (getActivity() != null) getActivity().runOnUiThread(() ->
                         Toast.makeText(getContext(), "应用配置失败: " + ex.getMessage(),
